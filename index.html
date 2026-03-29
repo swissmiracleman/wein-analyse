@@ -1,0 +1,1438 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wein Analyse</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            wine: { 50: '#fdf2f4', 100: '#fce7eb', 200: '#f9d0da', 300: '#f4a9bb', 400: '#ec7696', 500: '#e04974', 600: '#cc2d5e', 700: '#ab1f4c', 800: '#8f1d43', 900: '#7a1c3e', 950: '#440a1e' },
+          }
+        }
+      }
+    }
+  </script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Charts (charts agent) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- PDF Export (features agent) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .animate-spin { animation: spin 1s linear infinite; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes fadeInScale { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+    .fade-in { animation: fadeIn 0.6s ease-out; }
+    .fade-in-scale { animation: fadeInScale 0.3s ease-out; }
+    @keyframes pulse-soft { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+    .pulse-soft { animation: pulse-soft 2s ease-in-out infinite; }
+    @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+    .shimmer { background: linear-gradient(90deg, transparent 25%, rgba(255,255,255,0.3) 50%, transparent 75%); background-size: 200% 100%; animation: shimmer 2s infinite; }
+    .glass { backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+    [data-tooltip]:hover::after {
+      content: attr(data-tooltip);
+      position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+      background: #1f2937; color: white; padding: 6px 12px; border-radius: 8px;
+      font-size: 12px; white-space: nowrap; z-index: 100; margin-bottom: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    [data-tooltip] { position: relative; }
+    .bar-animate { transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1); }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+    /* === UX: Staggered Fade-In === */
+    @keyframes staggerFadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .stagger-item {
+      opacity: 0;
+      animation: staggerFadeIn 0.5s ease-out forwards;
+    }
+    .stagger-item:nth-child(1) { animation-delay: 0.05s; }
+    .stagger-item:nth-child(2) { animation-delay: 0.12s; }
+    .stagger-item:nth-child(3) { animation-delay: 0.19s; }
+    .stagger-item:nth-child(4) { animation-delay: 0.26s; }
+    .stagger-item:nth-child(5) { animation-delay: 0.33s; }
+    .stagger-item:nth-child(6) { animation-delay: 0.40s; }
+    .stagger-item:nth-child(7) { animation-delay: 0.47s; }
+    .stagger-item:nth-child(8) { animation-delay: 0.54s; }
+    .stagger-item:nth-child(9) { animation-delay: 0.61s; }
+    .stagger-item:nth-child(10) { animation-delay: 0.68s; }
+
+    /* === UX: Skeleton Loading === */
+    @keyframes skeletonPulse {
+      0%, 100% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+    }
+    .skeleton {
+      background: linear-gradient(110deg, #e5e7eb 30%, #f3f4f6 50%, #e5e7eb 70%);
+      background-size: 200% 100%;
+      animation: skeletonPulse 1.8s ease-in-out infinite;
+      border-radius: 12px;
+    }
+    .skeleton-text { height: 14px; border-radius: 6px; }
+    .skeleton-title { height: 22px; width: 60%; border-radius: 8px; }
+    .skeleton-circle { border-radius: 50%; }
+    .skeleton-card { border-radius: 16px; }
+
+    /* === UX: Konfetti Canvas === */
+    #confetti-canvas {
+      position: fixed; top: 0; left: 0;
+      width: 100vw; height: 100vh;
+      pointer-events: none; z-index: 100;
+    }
+
+    /* === UX: Animated Counter === */
+    .counter-value { display: inline-block; transition: transform 0.1s ease-out; }
+
+    /* === UX: Mobile === */
+    @media (max-width: 640px) {
+      button, label, [role="button"] { min-height: 44px; min-width: 44px; }
+      .mobile-tab-scroll {
+        overflow-x: auto; -webkit-overflow-scrolling: touch;
+        scrollbar-width: none; -ms-overflow-style: none; width: 100%;
+      }
+      .mobile-tab-scroll::-webkit-scrollbar { display: none; }
+      .mobile-header-actions { flex-direction: column; width: 100%; gap: 8px; }
+      .mobile-header-actions > * { width: 100%; justify-content: center; }
+      .mobile-kpi-grid { grid-template-columns: 1fr !important; }
+      .mobile-modal {
+        border-radius: 16px 16px 0 0; max-height: 92vh;
+        margin-top: auto; align-self: flex-end;
+      }
+      .mobile-unmatched-row { flex-direction: column; align-items: stretch; gap: 12px; }
+      .mobile-unmatched-row .mobile-input-group { flex-wrap: wrap; gap: 8px; }
+      .mobile-unmatched-row .mobile-input-group input { flex: 1; min-width: 80px; }
+    }
+
+    /* === Features: Dark Mode === */
+    body, .dark-transition * {
+      transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+    body.dark { background-color: #0f0d13; color: #e5e5e5; }
+    body.dark .bg-gray-50, body.dark .bg-white, body.dark .from-gray-50, body.dark .via-white { background-color: #1a1720 !important; }
+    body.dark .bg-gradient-to-br.from-gray-50 { background: linear-gradient(to bottom right, #1a1720, #1a1720, #2a1525) !important; }
+    body.dark .bg-gray-100 { background-color: #252230 !important; }
+    body.dark .bg-gray-50\/50 { background-color: rgba(26,23,32,0.5) !important; }
+    body.dark .text-gray-900, body.dark .text-gray-800 { color: #f0f0f0 !important; }
+    body.dark .text-gray-700 { color: #d0d0d0 !important; }
+    body.dark .text-gray-600 { color: #b0b0b0 !important; }
+    body.dark .text-gray-500 { color: #9a9a9a !important; }
+    body.dark .text-gray-400 { color: #808080 !important; }
+    body.dark .border-gray-100, body.dark .border-gray-200 { border-color: #2d2a38 !important; }
+    body.dark .hover\:bg-gray-50:hover { background-color: #252230 !important; }
+    body.dark .hover\:bg-gray-100:hover { background-color: #2d2a38 !important; }
+    body.dark .shadow-sm, body.dark .shadow-md { box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important; }
+    body.dark .bg-white.rounded-2xl, body.dark .bg-white.rounded-3xl { background-color: #1e1b26 !important; }
+    body.dark input, body.dark select { background-color: #252230 !important; color: #e5e5e5 !important; border-color: #3d3a48 !important; }
+    body.dark .border-t.border-gray-100 { border-color: #2d2a38 !important; }
+    body.dark ::-webkit-scrollbar-thumb { background: #4a4758; }
+    body.dark ::-webkit-scrollbar-thumb:hover { background: #5a5768; }
+  </style>
+</head>
+<body class="bg-gray-50">
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+    const iconCache = {};
+    const Icon = ({ name, size = 20, className = "" }) => {
+      const ref = useRef(null);
+      const cacheKey = `${name}-${size}`;
+      useEffect(() => {
+        if (ref.current && lucide.icons[name]) {
+          ref.current.innerHTML = "";
+          if (!iconCache[cacheKey]) iconCache[cacheKey] = lucide.createElement(lucide.icons[name]);
+          const el = iconCache[cacheKey].cloneNode(true);
+          el.setAttribute("width", size);
+          el.setAttribute("height", size);
+          if (className) el.setAttribute("class", className);
+          ref.current.appendChild(el);
+        }
+      }, [name, size, className]);
+      return <span ref={ref} style={{display: "inline-flex", alignItems: "center"}} />;
+    };
+
+    // --- Charts: ChartCanvas Component ---
+    const ChartCanvas = ({ id, renderChart, deps }) => {
+      const canvasRef = useRef(null);
+      const chartRef = useRef(null);
+      useEffect(() => {
+        if (!canvasRef.current) return;
+        if (chartRef.current) chartRef.current.destroy();
+        const ctx = canvasRef.current.getContext('2d');
+        chartRef.current = renderChart(ctx);
+        return () => { if (chartRef.current) chartRef.current.destroy(); };
+      }, deps);
+      return <canvas ref={canvasRef} id={id} />;
+    };
+
+    // --- UX: Animated Counter Hook ---
+    const useAnimatedCounter = (end, duration = 1500, isCurrency = true) => {
+      const [value, setValue] = useState(0);
+      const prevEnd = useRef(0);
+      useEffect(() => {
+        if (end === 0) { setValue(0); return; }
+        const startVal = prevEnd.current;
+        prevEnd.current = end;
+        const startTime = performance.now();
+        const tick = (now) => {
+          const elapsed = now - startTime;
+          const progress = Math.min(elapsed / duration, 1);
+          const eased = 1 - Math.pow(1 - progress, 3);
+          const current = startVal + (end - startVal) * eased;
+          setValue(current);
+          if (progress < 1) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }, [end, duration]);
+      if (isCurrency) return new Intl.NumberFormat('de-CH', { style: 'currency', currency: 'CHF' }).format(value);
+      return new Intl.NumberFormat('de-CH', { maximumFractionDigits: 1 }).format(value);
+    };
+
+    // --- UX: AnimatedKPIValue Component ---
+    const AnimatedKPIValue = ({ value, isCurrency = true }) => {
+      const display = useAnimatedCounter(value, 1500, isCurrency);
+      return <span className="counter-value">{display}</span>;
+    };
+
+    // --- UX: SkeletonLoading Component ---
+    const SkeletonLoading = ({ calcStatus }) => {
+      return (
+        <div className="space-y-6 fade-in">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm stagger-item">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="skeleton skeleton-text w-24"></div>
+                  <div className="skeleton skeleton-circle w-10 h-10"></div>
+                </div>
+                <div className="skeleton skeleton-title mb-3" style={{ height: '32px', width: '70%' }}></div>
+                <div className="skeleton skeleton-text w-28"></div>
+              </div>
+            ))}
+          </div>
+          <div className="skeleton" style={{ width: '300px', height: '44px', borderRadius: '12px' }}></div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm md:col-span-2 stagger-item" style={{ animationDelay: '0.2s' }}>
+              <div className="flex items-center gap-3 mb-6">
+                <div className="skeleton skeleton-circle w-10 h-10"></div>
+                <div className="skeleton skeleton-text w-40"></div>
+              </div>
+              <div className="space-y-4">
+                {[1, 2, 3, 4, 5].map(j => (
+                  <div key={j} className="flex items-center gap-4">
+                    <div className="skeleton w-8 h-8" style={{ borderRadius: '8px' }}></div>
+                    <div className="flex-1">
+                      <div className="flex justify-between mb-2">
+                        <div className="skeleton skeleton-text" style={{ width: `${40 + Math.random() * 30}%` }}></div>
+                        <div className="skeleton skeleton-text w-20"></div>
+                      </div>
+                      <div className="skeleton" style={{ height: '8px', width: `${80 - j * 12}%`, borderRadius: '4px' }}></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {[1, 2].map(k => (
+              <div key={k} className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm stagger-item" style={{ animationDelay: `${0.35 + k * 0.1}s` }}>
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="skeleton skeleton-circle w-10 h-10"></div>
+                  <div className="skeleton skeleton-text w-24"></div>
+                </div>
+                <div className="space-y-3">
+                  {[1, 2, 3, 4].map(j => (
+                    <div key={j}>
+                      <div className="flex justify-between mb-1.5">
+                        <div className="skeleton skeleton-text" style={{ width: `${30 + Math.random() * 25}%` }}></div>
+                        <div className="skeleton skeleton-text w-12"></div>
+                      </div>
+                      <div className="skeleton" style={{ height: '8px', width: `${70 - j * 10}%`, borderRadius: '4px' }}></div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="text-center pt-2">
+            <p className="text-sm text-gray-500 pulse-soft">{calcStatus}</p>
+          </div>
+        </div>
+      );
+    };
+
+    // --- UX: Confetti ---
+    const launchConfetti = () => {
+      let canvas = document.getElementById('confetti-canvas');
+      if (!canvas) {
+        canvas = document.createElement('canvas');
+        canvas.id = 'confetti-canvas';
+        document.body.appendChild(canvas);
+      }
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      const ctx = canvas.getContext('2d');
+      const colors = ['#e04974','#ab1f4c','#f9d0da','#3b82f6','#10b981','#f59e0b','#8b5cf6','#ec4899'];
+      const particles = [];
+      for (let i = 0; i < 80; i++) {
+        particles.push({
+          x: canvas.width * 0.5 + (Math.random() - 0.5) * 200,
+          y: canvas.height * 0.35,
+          vx: (Math.random() - 0.5) * 12, vy: -Math.random() * 14 - 4,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          size: Math.random() * 6 + 3, rotation: Math.random() * 360,
+          rotationSpeed: (Math.random() - 0.5) * 12,
+          shape: Math.random() > 0.5 ? 'rect' : 'circle',
+          gravity: 0.25 + Math.random() * 0.1,
+          drag: 0.98 + Math.random() * 0.015, opacity: 1,
+        });
+      }
+      let frame = 0;
+      const animate = () => {
+        if (frame >= 150) { ctx.clearRect(0, 0, canvas.width, canvas.height); canvas.remove(); return; }
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        particles.forEach(p => {
+          p.vy += p.gravity; p.vx *= p.drag; p.vy *= p.drag;
+          p.x += p.vx; p.y += p.vy; p.rotation += p.rotationSpeed;
+          p.opacity = Math.max(0, 1 - frame / 150);
+          ctx.save(); ctx.translate(p.x, p.y);
+          ctx.rotate((p.rotation * Math.PI) / 180);
+          ctx.globalAlpha = p.opacity; ctx.fillStyle = p.color;
+          if (p.shape === 'rect') ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2);
+          else { ctx.beginPath(); ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2); ctx.fill(); }
+          ctx.restore();
+        });
+        frame++;
+        requestAnimationFrame(animate);
+      };
+      requestAnimationFrame(animate);
+    };
+
+    // --- Konfiguration & Konstanten ---
+    const EXCLUSION_WORDS = [
+      'tee', 'kaffee', 'espresso', 'wasser', 'mineral', 'cola', 'fanta', 'sprite',
+      'citro', 'rivella', 'tonic', 'ginger', 'bier', 'beer', 'panache', 'limonade',
+      'shot', 'cognac', 'grappa', 'gin', 'vodka', 'rum', 'whisky', 'schorle',
+      'apfelsaft', 'orangensaft', 'nektar', 'sirup', 'eistee', 'icetea', 'jungfrau',
+      'henniez', 'müntschi', 'schümli', 'sanbitter', 'simmerntaler', 'simmentaler',
+      'kinley', 'softgetränke', 'crodino', 'möhli', 'lurisia', 'aperol', 'hugo',
+      'gespritzter', 'gespritzt', 'lillet', 'henache'
+    ];
+    const WINE_WHITELIST = [
+      'merlot', 'chardonnay', 'pinot', 'syrah', 'shiraz', 'cabernet', 'sauvignon',
+      'riesling', 'primitivo', 'nebbiolo', 'sangiovese', 'tempranillo', 'grenache',
+      'bordeaux', 'burgund', 'piemont', 'rioja', 'toscana', 'veneto', 'champagner',
+      'prosecco', 'cava', 'franciacorta', 'chateau', 'domaine', 'tenuta', 'bodega',
+      'aoc', 'doc', 'docg', 'riserva', 'reserva', 'gran reserva', 'cru',
+      'blanc', 'rouge', 'rose', 'wein', 'vino', 'vin', 'dl', 'cl', 'cüpli', 'cupli'
+    ];
+    const WINE_ALIASES = { 'mdme': 'madame', 'mme': 'madame', 'ch': 'chateau', 'dom': 'domaine', 'res': 'reserva', 'ris': 'riserva' };
+    const WINE_FILL_WORDS = ['aoc', 'doc', 'docg', 'igp', 'vdp', 'do', 'cdr'];
+    const OPEN_POS_KEYWORDS = ['offen', 'diverse', 'manuell'];
+    const REQUIRED_MASTER_COLS = ['Name', 'VP', 'EP'];
+    const REQUIRED_POS_COLS_OPTIONS = [['Bezeichnung'], ['Artikelname']];
+
+    // --- Hilfsfunktionen ---
+    const fixEncoding = (str) => {
+      if (typeof str !== 'string') return str;
+      return str.replace(/Ã„/g,'Ä').replace(/Ã–/g,'Ö').replace(/Ãœ/g,'Ü').replace(/Ã¤/g,'ä').replace(/Ã¶/g,'ö').replace(/Ã¼/g,'ü').replace(/Ã©/g,'é').replace(/Ã¨/g,'è').replace(/Ã¢/g,'â').replace(/Ã§/g,'ç').replace(/Ãª/g,'ê').replace(/Ã®/g,'î').replace(/Ã´/g,'ô').replace(/Ã»/g,'û').replace(/Ã\xa0/g,'à').replace(/Ã /g,'à');
+    };
+    const formatCHF = (v) => new Intl.NumberFormat('de-CH', { style: 'currency', currency: 'CHF' }).format(v || 0);
+    const formatNum = (v) => new Intl.NumberFormat('de-CH', { maximumFractionDigits: 1 }).format(v || 0);
+
+    const applyAliases = (str) => { let n = str; Object.keys(WINE_ALIASES).forEach(a => { n = n.replace(new RegExp(`\\b${a}\\b`,'g'), WINE_ALIASES[a]); }); return n; };
+    const removeFillerWords = (str) => { let n = str; WINE_FILL_WORDS.forEach(w => { n = n.replace(new RegExp(`\\b${w}\\b`,'g'), ""); }); return n; };
+    const normalizeString = (str) => {
+      if (!str) return "";
+      let n = str.toLowerCase();
+      n = applyAliases(n); n = removeFillerWords(n);
+      n = n.replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue');
+      n = n.replace(/\bhauswein\b/g,"").normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+      n = n.replace(/\d+(?:[.,]\d+)?\s*(cl|dl|l|ml)\b/g,"").replace(/\b(flasche|magnum|fl|cüpli|cupli)\b/g,"").replace(/[^a-z0-9\s]/g,"");
+      return n.trim();
+    };
+    const extractVolumeFactor = (name) => {
+      const l = name.toLowerCase();
+      if (l.includes('magnum')||l.includes('1.5l')||l.includes('150cl')) return 2.0;
+      if (l.includes('37.5cl')||l.includes('3.75dl')) return 0.5;
+      if (l.includes('cüpli')||l.includes('cupli')) return 0.1333;
+      const dl = l.match(/(\d+(?:[.,]\d+)?)\s*dl/); if (dl) return parseFloat(dl[1].replace(',','.'))/7.5;
+      const cl = l.match(/(\d+(?:[.,]\d+)?)\s*cl/); if (cl) return parseFloat(cl[1].replace(',','.'))/75;
+      return 1.0;
+    };
+    const isNonWine = (name) => { const l = name.toLowerCase(); if (/\b(2cl|4cl)\b/.test(l)) return true; return EXCLUSION_WORDS.some(w => l.includes(w)); };
+    const looksLikeWine = (name) => WINE_WHITELIST.some(w => name.toLowerCase().includes(w));
+    const validateColumns = (data, type) => {
+      if (!data.length) return { valid: false, message: "Datei ist leer." };
+      const cols = Object.keys(data[0]);
+      if (type === 'master') { const m = REQUIRED_MASTER_COLS.filter(c => !cols.includes(c)); if (m.length) return { valid: false, message: `Spalten fehlen: ${m.join(', ')}` }; }
+      else { if (!REQUIRED_POS_COLS_OPTIONS.some(o => o.every(c => cols.includes(c)))) return { valid: false, message: `Spalte 'Bezeichnung' oder 'Artikelname' fehlt.` }; }
+      return { valid: true };
+    };
+
+    const filterWithLLM = async (posData, key) => {
+      if (!key) return posData;
+      const names = [...new Set(posData.map(r => r.Bezeichnung||r.Artikelname||"").filter(Boolean))];
+      try {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${key}`, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ contents:[{parts:[{text:`Analysiere diese Gastronomie-Artikel. Gib ein JSON Array zurück mit NUR Wein/Schaumwein/Offenwein. Keine Biere, Soft, Spirituosen, Speisen.\n\n${JSON.stringify(names)}`}]}], systemInstruction:{parts:[{text:"Präzisions-Datenanalyst für Schweizer Gastronomie. Nur pures JSON."}]}, generationConfig:{responseMimeType:"application/json"} })
+        });
+        const r = await res.json(); const t = r.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (t) { try { const w = JSON.parse(t); if (Array.isArray(w)) { const s = new Set(w); return posData.filter(r => { const n=r.Bezeichnung||r.Artikelname||""; return s.has(n)||OPEN_POS_KEYWORDS.some(k=>n.toLowerCase().includes(k)); }); } } catch(e){} }
+      } catch(e) { console.error("LLM failed:",e); }
+      return posData;
+    };
+
+    // --- App ---
+    function App() {
+      const [masterData, setMasterData] = useState([]);
+      const [posData, setPosData] = useState([]);
+      const [posDataVorjahr, setPosDataVorjahr] = useState([]);
+      const [isCalculating, setIsCalculating] = useState(false);
+      const [calcStatus, setCalcStatus] = useState("");
+      const [analysisResult, setAnalysisResult] = useState(null);
+      const [useLLM, setUseLLM] = useState(true);
+      const [toast, setToast] = useState(null);
+      const [geminiKey, setGeminiKey] = useState(() => { try { return localStorage.getItem('weinAnalyseGeminiKey')||""; } catch(e) { return ""; } });
+      const [showKeyInput, setShowKeyInput] = useState(false);
+      const [learnedRules, setLearnedRules] = useState(() => { try { const s=localStorage.getItem('weinAnalyseRules'); return s?JSON.parse(s):{}; } catch(e){ return {}; } });
+      const [unmatchedItems, setUnmatchedItems] = useState([]);
+      const [uiState, setUiState] = useState({ showUnmatched: false, confirmIgnore: null });
+      const [activeTab, setActiveTab] = useState('overview');
+      const analysisRef = useRef(0);
+      // Features: Dark Mode + Matrix Search
+      const [darkMode, setDarkMode] = useState(() => { try { return localStorage.getItem('weinAnalyseDarkMode') === 'true'; } catch(e) { return false; } });
+      const [matrixSearch, setMatrixSearch] = useState('');
+
+      const showToast = (msg, type="error") => { setToast({msg,type}); setTimeout(()=>setToast(null), 4000); };
+      const saveRule = (name, obj) => { const u={...learnedRules,[name]:obj}; setLearnedRules(u); try{localStorage.setItem('weinAnalyseRules',JSON.stringify(u));}catch(e){showToast("Speicher voll?");} };
+      const saveGeminiKey = (k) => { setGeminiKey(k); try{localStorage.setItem('weinAnalyseGeminiKey',k);}catch(e){} setShowKeyInput(false); };
+
+      const handleFileUpload = async (e, type) => {
+        const file = e.target.files[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          try {
+            const wb = XLSX.read(evt.target.result, {type:'array'}); const ws = wb.Sheets[wb.SheetNames[0]];
+            const data = XLSX.utils.sheet_to_json(ws,{defval:""}).map(row => { const c={}; Object.keys(row).forEach(k => { let v=row[k]; if(typeof v==='string') v=fixEncoding(v); c[k.trim()]=v; }); return c; });
+            const val = validateColumns(data, type); if (!val.valid) { showToast(val.message); return; }
+            if (type==='master') setMasterData(data.sort((a,b)=>(b.Name?.length||0)-(a.Name?.length||0)));
+            if (type==='pos') setPosData(data);
+            if (type==='posVorjahr') setPosDataVorjahr(data);
+          } catch(err) { showToast("Datei konnte nicht gelesen werden."); }
+        };
+        reader.readAsArrayBuffer(file);
+      };
+
+      const runAnalysis = async () => {
+        if (!masterData.length||!posData.length) return;
+        const thisRun = ++analysisRef.current;
+        setIsCalculating(true);
+        let curPos=posData, curVJ=posDataVorjahr;
+        if (useLLM&&geminiKey) {
+          setCalcStatus("KI analysiert Kassenexport...");
+          curPos = await filterWithLLM(posData,geminiKey); if(thisRun!==analysisRef.current) return;
+          if(posDataVorjahr.length){ curVJ = await filterWithLLM(posDataVorjahr,geminiKey); if(thisRun!==analysisRef.current) return; }
+        }
+        setCalcStatus("Matching & Berechnung...");
+        setTimeout(() => {
+          if(thisRun!==analysisRef.current) return;
+          let tS=0,tDB=0,tV=0,vS=0; const iS={},unk=[],cS={},tyS={};
+          const vjItems={};
+          const mN = masterData.map(m=>({...m, normName:normalizeString(`${m.Name||""} ${m.Weintyp||""}`), normTokens:normalizeString(`${m.Name||""} ${m.Weintyp||""}`).split(' ').filter(t=>t.length>2)}));
+          const mIdx=new Map(); mN.forEach(m=>{m.normTokens.forEach(t=>{if(!mIdx.has(t))mIdx.set(t,[]);mIdx.get(t).push(m);});});
+          const colorConflict=(a,b)=>{const c={red:['rouge','rot','rosso','tinto'],white:['blanc','weiss','bianco','blanco'],rose:['rose','rosato']};const g=s=>Object.keys(c).find(k=>c[k].some(w=>s.includes(w)));const x=g(a),y=g(b);return x&&y&&x!==y;};
+          const findMatch=(pN)=>{for(const m of mN){if(m.normName.includes(pN)||pN.includes(m.normName))return m;}const pT=pN.split(' ').filter(t=>t.length>2);if(pT.length<=1)return null;const cands=new Set();pT.forEach(t=>{const ms=mIdx.get(t);if(ms)ms.forEach(m=>cands.add(m));});for(const m of cands){if(colorConflict(pN,m.normName))continue;const o=pT.filter(t=>m.normTokens.includes(t)).length;const s=Math.min(pT.length,m.normTokens.length);if(o>=2&&(o/s)>=0.66)return m;}return null;};
+          const proc=(ds,isVJ=false)=>{ds.forEach(r=>{const rN=r.Bezeichnung||r.Artikelname||"";const q=parseFloat(r.Zeitraum||r.Menge||r['Verkaufte Menge'])||0;if(!rN||q<=0)return;if(rN.toLowerCase().startsWith("gesamt"))return;if(!useLLM&&isNonWine(rN))return;const rule=learnedRules[rN];if(rule&&rule.type==='ignore')return;const vF=extractVolumeFactor(rN);const pN=normalizeString(rN);let mm=findMatch(pN);if(rule&&rule.type==='custom')mm={Name:rN,VP:rule.vp,EP:rule.ep,DB:rule.vp-rule.ep,Land:'Manuell',Weintyp:'Manuell'};if(mm){const cVP=(parseFloat(mm.VP)||0)*vF;const cDB=(parseFloat(mm.DB)||0)*vF;const lS=cVP*q,lDB=cDB*q,lV=vF*q;if(isVJ){vS+=lS;if(!vjItems[mm.Name])vjItems[mm.Name]={name:mm.Name,sales:0,vol:0};vjItems[mm.Name].sales+=lS;vjItems[mm.Name].vol+=lV;}else{tS+=lS;tDB+=lDB;tV+=lV;if(!iS[mm.Name])iS[mm.Name]={name:mm.Name,sales:0,db:0,vol:0,avgDbPerUnit:0,vp:parseFloat(mm.VP)||0};iS[mm.Name].sales+=lS;iS[mm.Name].db+=lDB;iS[mm.Name].vol+=lV;const la=mm.Land?.trim()||'Unbekannt';cS[la]=(cS[la]||0)+lS;const ty=mm.Weintyp?.trim()||'Unbekannt';tyS[ty]=(tyS[ty]||0)+lS;}}else if(!isVJ){const isO=OPEN_POS_KEYWORDS.some(k=>rN.toLowerCase().includes(k));if(useLLM||looksLikeWine(rN)||isO){if(!unk.some(u=>u.name===rN))unk.push({name:rN,qty:q,volFactor:vF});}}});};
+          proc(curPos,false); if(curVJ.length) proc(curVJ,true);
+          const iA=Object.values(iS); iA.forEach(i=>i.avgDbPerUnit=i.vol>0?i.db/i.vol:0);
+          const aV=iA.length>0?iA.reduce((a,c)=>a+c.vol,0)/iA.length:0;
+          const aDB=iA.length>0?iA.reduce((a,c)=>a+c.avgDbPerUnit,0)/iA.length:0;
+          const mx={stars:[],cows:[],questions:[],dogs:[]};
+          iA.forEach(i=>{const hV=i.vol>=aV,hDB=i.avgDbPerUnit>=aDB;if(hV&&hDB)mx.stars.push(i);else if(hV&&!hDB)mx.cows.push(i);else if(!hV&&hDB)mx.questions.push(i);else mx.dogs.push(i);});
+          Object.keys(mx).forEach(k=>mx[k].sort((a,b)=>b.sales-a.sales));
+          const cArr=Object.entries(cS).map(([n,s])=>({name:n,sales:s,pct:tS>0?(s/tS)*100:0})).sort((a,b)=>b.sales-a.sales);
+          const tArr=Object.entries(tyS).map(([n,s])=>({name:n,sales:s,pct:tS>0?(s/tS)*100:0})).sort((a,b)=>b.sales-a.sales);
+
+          // --- ABC-Analyse (data agent) ---
+          const sortedBySales = [...iA].sort((a,b)=>b.sales-a.sales);
+          let cumSales = 0;
+          const abcItems = sortedBySales.map(item => {
+            cumSales += item.sales;
+            const cumPct = tS > 0 ? (cumSales / tS * 100) : 0;
+            const abc = cumPct <= 80 ? 'A' : cumPct <= 95 ? 'B' : 'C';
+            return { ...item, abc, cumPct };
+          });
+          const abcSummary = {
+            A: abcItems.filter(i=>i.abc==='A'),
+            B: abcItems.filter(i=>i.abc==='B'),
+            C: abcItems.filter(i=>i.abc==='C')
+          };
+          const avgBottlePrice = tV > 0 ? tS / tV : 0;
+          const dbRankingTop10 = [...iA].sort((a,b)=>b.avgDbPerUnit-a.avgDbPerUnit).slice(0,10);
+
+          // --- Empfehlungen (data agent) ---
+          const recommendations = [];
+          mx.questions.sort((a,b)=>b.avgDbPerUnit-a.avgDbPerUnit).slice(0,3).forEach(item => {
+            recommendations.push({ type:'promotion', icon:'rocket', color:'amber',
+              text: `"${item.name}" hat ${formatCHF(item.avgDbPerUnit)} DB/Fl. aber nur ${formatNum(item.vol)} Fl. verkauft — Verkaufsförderung empfohlen.` });
+          });
+          mx.dogs.sort((a,b)=>a.avgDbPerUnit-b.avgDbPerUnit).slice(0,2).forEach(item => {
+            recommendations.push({ type:'review', icon:'alert-triangle', color:'red',
+              text: `"${item.name}" hat nur ${formatCHF(item.avgDbPerUnit)} DB/Fl. und ${formatNum(item.vol)} Fl. — Sortiment überprüfen.` });
+          });
+          if (mx.stars.length > 0) {
+            const topStar = mx.stars[0];
+            recommendations.push({ type:'highlight', icon:'star', color:'emerald',
+              text: `"${topStar.name}" ist Ihr Top-Performer: ${formatCHF(topStar.sales)} Umsatz mit ${formatCHF(topStar.avgDbPerUnit)} DB/Fl.` });
+          }
+          if (abcSummary.A.length > 0 && abcSummary.C.length > 0) {
+            recommendations.push({ type:'insight', icon:'lightbulb', color:'blue',
+              text: `${abcSummary.A.length} A-Weine generieren 80% des Umsatzes. ${abcSummary.C.length} C-Weine tragen nur 5% bei — Straffung möglich.` });
+          }
+
+          // --- Vorjahr Gewinner/Verlierer (data agent) ---
+          let winners = [], losers = [];
+          if (Object.keys(vjItems).length > 0) {
+            const comparisons = iA.filter(item => vjItems[item.name]).map(item => {
+              const vj = vjItems[item.name];
+              const diff = item.sales - vj.sales;
+              const pctChange = vj.sales > 0 ? (diff / vj.sales * 100) : 0;
+              return { name: item.name, salesNow: item.sales, salesVJ: vj.sales, diff, pctChange };
+            });
+            winners = [...comparisons].sort((a,b)=>b.diff-a.diff).slice(0,5).filter(c=>c.diff>0);
+            losers = [...comparisons].sort((a,b)=>a.diff-b.diff).slice(0,5).filter(c=>c.diff<0);
+            if (winners.length > 0) {
+              recommendations.push({ type:'trend', icon:'trending-up', color:'emerald',
+                text: `Grösster Gewinner: "${winners[0].name}" mit +${formatCHF(winners[0].diff)} (${winners[0].pctChange>=0?'+':''}${winners[0].pctChange.toFixed(1)}%).` });
+            }
+            if (losers.length > 0) {
+              recommendations.push({ type:'trend', icon:'trending-down', color:'red',
+                text: `Grösster Verlierer: "${losers[0].name}" mit ${formatCHF(losers[0].diff)} (${losers[0].pctChange.toFixed(1)}%).` });
+            }
+          }
+
+          setAnalysisResult({totalSales:tS,totalDB:tDB,totalVolume:tV,vorjahrSales:vS,matrix:mx,countries:cArr,types:tArr,dbMargin:tS>0?(tDB/tS*100):0,
+            vjItemSales:vjItems, abcItems, abcSummary, avgBottlePrice, dbRankingTop10, recommendations, winners, losers});
+          setUnmatchedItems(unk);
+          launchConfetti();
+          setIsCalculating(false);
+        }, 100);
+      };
+
+      useEffect(()=>{ if(masterData.length>0&&posData.length>0) runAnalysis(); }, [masterData,posData,posDataVorjahr,learnedRules,useLLM,geminiKey]);
+
+      // Features: Dark Mode effect
+      useEffect(() => {
+        document.body.classList.toggle('dark', darkMode);
+        document.body.classList.add('dark-transition');
+        try { localStorage.setItem('weinAnalyseDarkMode', darkMode); } catch(e) {}
+      }, [darkMode]);
+
+      const exportResults = () => {
+        if(!analysisResult) return;
+        const rows=[["Kategorie","Name","Umsatz CHF","DB CHF","Menge Fl.","DB/Fl. CHF"]];
+        ["stars","cows","questions","dogs"].forEach(cat=>{const lb={stars:"Star",cows:"Volumenträger",questions:"Schläfer",dogs:"Penner"}[cat];analysisResult.matrix[cat].forEach(i=>rows.push([lb,i.name,i.sales.toFixed(2),i.db.toFixed(2),i.vol.toFixed(1),i.avgDbPerUnit.toFixed(2)]));});
+        rows.push([],["Land","Umsatz CHF","Anteil %"]); analysisResult.countries.forEach(c=>rows.push([c.name,c.sales.toFixed(2),c.pct.toFixed(1)]));
+        rows.push([],["Weintyp","Umsatz CHF","Anteil %"]); analysisResult.types.forEach(t=>rows.push([t.name,t.sales.toFixed(2),t.pct.toFixed(1)]));
+        const ws=XLSX.utils.aoa_to_sheet(rows); const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Analyse");
+        XLSX.writeFile(wb,`Wein-Analyse-${new Date().toISOString().slice(0,10)}.xlsx`);
+      };
+
+      // Features: PDF Export
+      const exportPDF = async () => {
+        if (!analysisResult) return;
+        showToast("PDF wird erstellt...", "success");
+        try {
+          const el = document.getElementById('analysis-content');
+          if (!el) return;
+          const canvas = await html2canvas(el, { scale: 2, backgroundColor: darkMode ? '#1a1720' : '#ffffff', useCORS: true, logging: false });
+          const imgData = canvas.toDataURL('image/png');
+          const pdf = new jspdf.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+          const pdfW = pdf.internal.pageSize.getWidth();
+          const pdfH = pdf.internal.pageSize.getHeight();
+          const margin = 10;
+          const usableW = pdfW - 2 * margin;
+          const imgW = canvas.width;
+          const imgH = canvas.height;
+          const ratio = usableW / imgW;
+          pdf.setFillColor(122, 28, 62);
+          pdf.rect(0, 0, pdfW, 20, 'F');
+          pdf.setTextColor(255, 255, 255);
+          pdf.setFontSize(14);
+          pdf.setFont(undefined, 'bold');
+          pdf.text('Wein Analyse - Report', margin, 13);
+          pdf.setFontSize(8);
+          pdf.setFont(undefined, 'normal');
+          pdf.text(new Date().toLocaleDateString('de-CH'), pdfW - margin, 13, { align: 'right' });
+          let yPos = 25;
+          const pageContentH = pdfH - 30;
+          let srcY = 0;
+          while (srcY < imgH) {
+            if (srcY > 0) { pdf.addPage(); yPos = 10; }
+            const sliceH = Math.min((pageContentH - yPos) / ratio, imgH - srcY);
+            const sliceCanvas = document.createElement('canvas');
+            sliceCanvas.width = imgW;
+            sliceCanvas.height = sliceH;
+            const ctx = sliceCanvas.getContext('2d');
+            ctx.drawImage(canvas, 0, srcY, imgW, sliceH, 0, 0, imgW, sliceH);
+            const sliceData = sliceCanvas.toDataURL('image/png');
+            pdf.addImage(sliceData, 'PNG', margin, yPos, usableW, sliceH * ratio);
+            srcY += sliceH;
+          }
+          pdf.save(`Wein-Analyse-${new Date().toISOString().slice(0, 10)}.pdf`);
+          showToast("PDF exportiert!", "success");
+        } catch (err) {
+          console.error("PDF export error:", err);
+          showToast("PDF-Export fehlgeschlagen: " + err.message);
+        }
+      };
+
+      const hasData = masterData.length > 0 || posData.length > 0;
+      const isReady = masterData.length > 0 && posData.length > 0;
+
+      // --- RENDER ---
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-wine-50/30">
+
+          {/* Toast */}
+          {toast && (
+            <div className={`fixed top-6 right-6 z-[60] px-5 py-3 rounded-2xl shadow-xl text-sm font-medium flex items-center gap-3 fade-in-scale ${toast.type==='error'?'bg-red-500 text-white':'bg-emerald-500 text-white'}`}>
+              <Icon name={toast.type==='error'?"alert-circle":"circle-check"} size={18} />
+              {toast.msg}
+              <button onClick={()=>setToast(null)} className="ml-1 hover:opacity-70"><Icon name="x" size={14} /></button>
+            </div>
+          )}
+
+          {/* Header */}
+          <div className="bg-gradient-to-r from-wine-900 via-wine-800 to-wine-900 text-white">
+            <div className="max-w-7xl mx-auto px-6 md:px-10 py-8">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 bg-white/10 rounded-2xl flex items-center justify-center backdrop-blur-sm border border-white/10">
+                    <Icon name="wine" size={28} className="text-wine-200" />
+                  </div>
+                  <div>
+                    <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Wein Analyse</h1>
+                    <p className="text-wine-200 text-sm mt-0.5">Kassensystem & Masterliste Auswertung</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 mobile-header-actions sm:flex-row">
+                  {/* Dark Mode Toggle */}
+                  <button onClick={()=>setDarkMode(!darkMode)}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all bg-white/10 text-white/90 border border-white/10 hover:bg-white/20"
+                    data-tooltip={darkMode ? 'Light Mode' : 'Dark Mode'}>
+                    <Icon name={darkMode ? "sun" : "moon"} size={15} />{darkMode ? 'Hell' : 'Dunkel'}
+                  </button>
+                  <button onClick={()=>setShowKeyInput(!showKeyInput)}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${geminiKey?'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 hover:bg-emerald-500/30':'bg-white/10 text-white/70 border border-white/10 hover:bg-white/20'}`}>
+                    <Icon name="key" size={15} />{geminiKey?'API-Key aktiv':'API-Key'}
+                  </button>
+                  <button onClick={()=>setUseLLM(!useLLM)}
+                    data-tooltip="LLM filtert Getränke vor dem Matching"
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${useLLM?'bg-purple-500/20 text-purple-200 border border-purple-400/30 hover:bg-purple-500/30':'bg-white/10 text-white/70 border border-white/10 hover:bg-white/20'}`}>
+                    <Icon name={useLLM?"sparkles":"bot"} size={15} />KI {useLLM?'An':'Aus'}
+                  </button>
+                  {analysisResult && (
+                    <button onClick={exportResults}
+                      className="flex items-center gap-2 px-4 py-2.5 bg-white/10 text-white/90 rounded-xl text-sm font-medium border border-white/10 hover:bg-white/20 transition-all">
+                      <Icon name="download" size={15} />Export
+                    </button>
+                  )}
+                  {analysisResult && (
+                    <button onClick={exportPDF}
+                      className="flex items-center gap-2 px-4 py-2.5 bg-white/10 text-white/90 rounded-xl text-sm font-medium border border-white/10 hover:bg-white/20 transition-all">
+                      <Icon name="file-text" size={15} />PDF
+                    </button>
+                  )}
+                  {unmatchedItems.length>0 && (
+                    <button onClick={()=>setUiState({...uiState,showUnmatched:true})}
+                      className="flex items-center gap-2 px-4 py-2.5 bg-amber-500/20 text-amber-200 rounded-xl text-sm font-medium border border-amber-400/30 hover:bg-amber-500/30 transition-all">
+                      <Icon name="package-search" size={15} />{unmatchedItems.length} offen
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="max-w-7xl mx-auto px-6 md:px-10 py-8 space-y-8">
+
+            {/* API Key Input */}
+            {showKeyInput && (
+              <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm fade-in-scale">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center"><Icon name="key" size={20} className="text-purple-600" /></div>
+                  <div>
+                    <h3 className="font-semibold text-gray-800">Gemini API-Key</h3>
+                    <p className="text-xs text-gray-500">Wird nur lokal gespeichert, nie übermittelt.</p>
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <input type="password" defaultValue={geminiKey} id="gemini-key-input" placeholder="AIza..."
+                    className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition" />
+                  <button onClick={()=>saveGeminiKey(document.getElementById('gemini-key-input').value)}
+                    className="px-5 py-2.5 bg-purple-600 text-white text-sm font-semibold rounded-xl hover:bg-purple-700 transition shadow-sm">Speichern</button>
+                  {geminiKey && <button onClick={()=>saveGeminiKey("")}
+                    className="px-5 py-2.5 bg-red-50 text-red-600 text-sm font-semibold rounded-xl hover:bg-red-100 transition">Löschen</button>}
+                </div>
+              </div>
+            )}
+
+            {/* Upload Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              {[
+                { title:"Masterliste", type:"master", data:masterData, icon:"file-spreadsheet", gradient:"from-blue-500 to-blue-600", bg:"bg-blue-50", ring:"ring-blue-200" },
+                { title:"POS Aktuell", type:"pos", data:posData, icon:"bar-chart-3", gradient:"from-wine-500 to-wine-600", bg:"bg-wine-50", ring:"ring-wine-200" },
+                { title:"POS Vorjahr (optional)", type:"posVorjahr", data:posDataVorjahr, icon:"trending-up", gradient:"from-amber-500 to-amber-600", bg:"bg-amber-50", ring:"ring-amber-200" }
+              ].map((c) => {
+                const loaded = c.data.length > 0;
+                return (
+                  <div key={c.type} className={`group relative rounded-2xl border-2 transition-all duration-300 stagger-item ${loaded ? `border-emerald-200 bg-gradient-to-br from-emerald-50 to-white shadow-sm` : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-md'} p-6`}>
+                    <div className="flex items-center gap-3 mb-5">
+                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${loaded ? 'bg-emerald-100' : `bg-gradient-to-br ${c.gradient}`} transition-all`}>
+                        <Icon name={loaded ? "circle-check" : c.icon} size={22} className={loaded ? "text-emerald-600" : "text-white"} />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-gray-800">{c.title}</h3>
+                        <p className={`text-xs ${loaded ? 'text-emerald-600 font-medium' : 'text-gray-400'}`}>
+                          {loaded ? `${c.data.length} Zeilen geladen` : 'Noch keine Datei'}
+                        </p>
+                      </div>
+                    </div>
+                    <label className={`flex w-full cursor-pointer items-center justify-center rounded-xl border-2 border-dashed py-4 text-sm font-medium transition-all ${loaded ? 'border-emerald-200 text-emerald-600 hover:bg-emerald-50' : 'border-gray-200 text-gray-500 hover:border-gray-400 hover:text-gray-700 hover:bg-gray-50'}`}>
+                      <Icon name="upload" size={16} className="mr-2" />
+                      {loaded ? 'Andere Datei wählen' : 'Excel / CSV hochladen'}
+                      <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e)=>handleFileUpload(e,c.type)} />
+                    </label>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Empty State */}
+            {!isCalculating && !analysisResult && (
+              <div className="text-center py-20 fade-in">
+                <div className="inline-flex items-center justify-center w-24 h-24 bg-gradient-to-br from-wine-100 to-wine-50 rounded-3xl mb-6">
+                  <Icon name="grape" size={40} className="text-wine-400" />
+                </div>
+                <h2 className="text-2xl font-bold text-gray-800 mb-3">Bereit für die Analyse</h2>
+                <p className="text-gray-500 max-w-md mx-auto">
+                  Lade eine <span className="font-semibold text-blue-600">Masterliste</span> und einen <span className="font-semibold text-wine-600">POS-Export</span> hoch, um die Weinanalyse zu starten.
+                </p>
+                <div className="flex items-center justify-center gap-8 mt-10 text-sm text-gray-400">
+                  <div className="flex items-center gap-2"><Icon name="upload" size={16} />Upload</div>
+                  <Icon name="arrow-right" size={16} />
+                  <div className="flex items-center gap-2"><Icon name="cpu" size={16} />Matching</div>
+                  <Icon name="arrow-right" size={16} />
+                  <div className="flex items-center gap-2"><Icon name="bar-chart-3" size={16} />Ergebnis</div>
+                </div>
+              </div>
+            )}
+
+            {/* Loading - Skeleton (UX) */}
+            {isCalculating && <SkeletonLoading calcStatus={calcStatus} />}
+
+            {/* Results */}
+            {!isCalculating && analysisResult && (
+              <div id="analysis-content" className="space-y-8 fade-in">
+
+                {/* KPI Cards - 4 columns (data: added avgBottlePrice) */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mobile-kpi-grid">
+                  {[
+                    { title:"Umsatz Wein", value:analysisResult.totalSales, icon:"dollar-sign", gradient:"from-blue-500 to-blue-600",
+                      sub: analysisResult.vorjahrSales ? (() => { const pct=((analysisResult.totalSales-analysisResult.vorjahrSales)/analysisResult.vorjahrSales*100); return { text:`${pct>=0?'+':''}${pct.toFixed(1)}% vs. Vorjahr`, positive:pct>=0 }; })() : null },
+                    { title:"Deckungsbeitrag", value:analysisResult.totalDB, icon:"trending-up", gradient:"from-emerald-500 to-emerald-600",
+                      sub: { text:`${analysisResult.dbMargin.toFixed(1)}% Marge`, positive:analysisResult.dbMargin>40 } },
+                    { title:"Verkaufte Flaschen", value:analysisResult.totalVolume, icon:"wine", gradient:"from-wine-500 to-wine-600", isCurrency:false },
+                    { title:"Ø Flaschenpreis", value:analysisResult.avgBottlePrice, icon:"tag", gradient:"from-purple-500 to-purple-600",
+                      sub: { text:`${formatNum(analysisResult.totalVolume)} Fl. total`, positive:true } }
+                  ].map((kpi,i) => (
+                    <div key={i} className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md transition-all group stagger-item">
+                      <div className="flex items-center justify-between mb-4">
+                        <span className="text-sm font-medium text-gray-500">{kpi.title}</span>
+                        <div className={`w-10 h-10 bg-gradient-to-br ${kpi.gradient} rounded-xl flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform`}>
+                          <Icon name={kpi.icon} size={18} className="text-white" />
+                        </div>
+                      </div>
+                      <div className="text-3xl font-extrabold text-gray-900 tracking-tight">
+                        <AnimatedKPIValue value={kpi.value} isCurrency={kpi.isCurrency!==false} />
+                      </div>
+                      {kpi.sub && (
+                        <div className={`mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${kpi.sub.positive ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                          <Icon name={kpi.sub.positive ? "trending-up" : "trending-down"} size={13} />
+                          {kpi.sub.text}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Tab Navigation - merged all tabs */}
+                <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit flex-wrap mobile-tab-scroll">
+                  {[
+                    {id:'overview',label:'Übersicht',icon:'layout-grid'},
+                    {id:'insights',label:'Empfehlungen',icon:'lightbulb'},
+                    {id:'abc',label:'ABC-Analyse',icon:'bar-chart-2'},
+                    {id:'dbranking',label:'DB-Ranking',icon:'award'},
+                    {id:'matrix',label:'Matrix',icon:'grid-3x3'},
+                    {id:'comparison',label:'Vergleich',icon:'git-compare-arrows'},
+                    {id:'details',label:'Verteilung',icon:'pie-chart'},
+                    ...(analysisResult.winners?.length > 0 || analysisResult.losers?.length > 0 ? [{id:'trends',label:'Trends',icon:'activity'}] : [])
+                  ].map(tab => (
+                    <button key={tab.id} onClick={()=>setActiveTab(tab.id)}
+                      className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab===tab.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                      <Icon name={tab.icon} size={15} />{tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* ========== Overview Tab ========== */}
+                {activeTab === 'overview' && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5 fade-in">
+                    {/* Top 5 Weine */}
+                    <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm md:col-span-2">
+                      <div className="flex items-center gap-3 mb-6">
+                        <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-amber-500 rounded-xl flex items-center justify-center"><Icon name="trophy" size={20} className="text-white" /></div>
+                        <h3 className="font-bold text-lg text-gray-800">Top 5 Weine nach Umsatz</h3>
+                      </div>
+                      <div className="space-y-4">
+                        {analysisResult.matrix.stars.concat(analysisResult.matrix.cows).sort((a,b)=>b.sales-a.sales).slice(0,5).map((item,i) => {
+                          const maxSales = analysisResult.totalSales;
+                          const pct = maxSales > 0 ? (item.sales / maxSales * 100) : 0;
+                          return (
+                            <div key={item.name} className="flex items-center gap-4 stagger-item">
+                              <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold ${i===0?'bg-amber-100 text-amber-700':i===1?'bg-gray-100 text-gray-600':i===2?'bg-orange-100 text-orange-700':'bg-gray-50 text-gray-500'}`}>{i+1}</div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex justify-between items-center mb-1">
+                                  <span className="font-medium text-gray-800 truncate mr-4" title={item.name}>{item.name}</span>
+                                  <span className="text-sm font-semibold text-gray-600 whitespace-nowrap">{formatCHF(item.sales)}</span>
+                                </div>
+                                <div className="w-full bg-gray-100 rounded-full h-2">
+                                  <div className="bg-gradient-to-r from-wine-400 to-wine-500 h-2 rounded-full bar-animate" style={{width:`${pct}%`}}></div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Länder */}
+                    <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
+                      <div className="flex items-center gap-3 mb-6">
+                        <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-500 rounded-xl flex items-center justify-center"><Icon name="globe" size={20} className="text-white" /></div>
+                        <h3 className="font-bold text-lg text-gray-800">Länder</h3>
+                      </div>
+                      <div className="space-y-3.5 max-h-72 overflow-y-auto pr-1">
+                        {analysisResult.countries.map((item,i) => (
+                          <div key={item.name} className="stagger-item">
+                            <div className="flex justify-between items-center text-sm mb-1.5">
+                              <span className="font-medium text-gray-700">{item.name}</span>
+                              <span className="text-gray-500 font-semibold">{item.pct.toFixed(1)}%</span>
+                            </div>
+                            <div className="w-full bg-gray-100 rounded-full h-2">
+                              <div className="bg-gradient-to-r from-blue-400 to-blue-500 h-2 rounded-full bar-animate" style={{width:`${item.pct}%`}}></div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Weintypen */}
+                    <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
+                      <div className="flex items-center gap-3 mb-6">
+                        <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-purple-500 rounded-xl flex items-center justify-center"><Icon name="pie-chart" size={20} className="text-white" /></div>
+                        <h3 className="font-bold text-lg text-gray-800">Weintypen</h3>
+                      </div>
+                      <div className="space-y-3.5 max-h-72 overflow-y-auto pr-1">
+                        {analysisResult.types.map((item,i) => (
+                          <div key={item.name} className="stagger-item">
+                            <div className="flex justify-between items-center text-sm mb-1.5">
+                              <span className="font-medium text-gray-700">{item.name}</span>
+                              <span className="text-gray-500 font-semibold">{item.pct.toFixed(1)}%</span>
+                            </div>
+                            <div className="w-full bg-gray-100 rounded-full h-2">
+                              <div className="bg-gradient-to-r from-purple-400 to-purple-500 h-2 rounded-full bar-animate" style={{width:`${item.pct}%`}}></div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ========== Empfehlungen Tab (data) ========== */}
+                {activeTab === 'insights' && (
+                  <div className="fade-in space-y-5">
+                    <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
+                      <div className="flex items-center gap-3 mb-6">
+                        <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-orange-500 rounded-xl flex items-center justify-center"><Icon name="lightbulb" size={20} className="text-white" /></div>
+                        <div>
+                          <h3 className="font-bold text-lg text-gray-800">Automatische Empfehlungen</h3>
+                          <p className="text-sm text-gray-500">Basierend auf Ihrer Datenanalyse</p>
+                        </div>
+                      </div>
+                      <div className="space-y-4">
+                        {(analysisResult.recommendations||[]).map((rec,i) => {
+                          const colorMap = {amber:'bg-amber-50 border-amber-200 text-amber-800',red:'bg-red-50 border-red-200 text-red-800',emerald:'bg-emerald-50 border-emerald-200 text-emerald-800',blue:'bg-blue-50 border-blue-200 text-blue-800'};
+                          const iconBgMap = {amber:'bg-amber-100',red:'bg-red-100',emerald:'bg-emerald-100',blue:'bg-blue-100'};
+                          const iconColorMap = {amber:'text-amber-600',red:'text-red-600',emerald:'text-emerald-600',blue:'text-blue-600'};
+                          return (
+                            <div key={i} className={`flex items-start gap-4 p-4 rounded-xl border stagger-item ${colorMap[rec.color]||'bg-gray-50 border-gray-200 text-gray-800'}`}>
+                              <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${iconBgMap[rec.color]||'bg-gray-100'}`}>
+                                <Icon name={rec.icon} size={18} className={iconColorMap[rec.color]||'text-gray-600'} />
+                              </div>
+                              <p className="text-sm font-medium leading-relaxed pt-2">{rec.text}</p>
+                            </div>
+                          );
+                        })}
+                        {(!analysisResult.recommendations||analysisResult.recommendations.length===0) && (
+                          <p className="text-gray-400 text-sm text-center py-8">Keine Empfehlungen verfügbar.</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ========== ABC-Analyse Tab (data) ========== */}
+                {activeTab === 'abc' && (
+                  <div className="fade-in space-y-5">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                      {[
+                        {key:'A', title:'A-Weine', sub:'Top 80% Umsatz', color:'from-emerald-500 to-emerald-600', bg:'bg-emerald-50', border:'border-emerald-200', text:'text-emerald-700'},
+                        {key:'B', title:'B-Weine', sub:'Nächste 15% Umsatz', color:'from-amber-500 to-amber-600', bg:'bg-amber-50', border:'border-amber-200', text:'text-amber-700'},
+                        {key:'C', title:'C-Weine', sub:'Restliche 5% Umsatz', color:'from-red-400 to-red-500', bg:'bg-red-50', border:'border-red-200', text:'text-red-700'}
+                      ].map(cat => {
+                        const items = analysisResult.abcSummary?.[cat.key] || [];
+                        const catSales = items.reduce((a,c)=>a+c.sales,0);
+                        return (
+                          <div key={cat.key} className={`bg-white rounded-2xl border ${cat.border} p-6 shadow-sm stagger-item`}>
+                            <div className="flex items-center gap-3 mb-4">
+                              <div className={`w-12 h-12 bg-gradient-to-br ${cat.color} rounded-xl flex items-center justify-center`}>
+                                <span className="text-white font-extrabold text-lg">{cat.key}</span>
+                              </div>
+                              <div>
+                                <h3 className="font-bold text-gray-800">{cat.title}</h3>
+                                <p className="text-xs text-gray-400">{cat.sub}</p>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 mb-4">
+                              <div className={`${cat.bg} rounded-lg p-3 text-center`}>
+                                <div className={`text-2xl font-extrabold ${cat.text}`}>{items.length}</div>
+                                <div className="text-xs text-gray-500">Weine</div>
+                              </div>
+                              <div className={`${cat.bg} rounded-lg p-3 text-center`}>
+                                <div className={`text-lg font-bold ${cat.text}`}>{formatCHF(catSales)}</div>
+                                <div className="text-xs text-gray-500">Umsatz</div>
+                              </div>
+                            </div>
+                            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                              {items.slice(0,8).map(item => (
+                                <div key={item.name} className={`flex justify-between items-center text-sm py-1.5 px-2 rounded-lg ${cat.bg}/50`}>
+                                  <span className="font-medium text-gray-700 truncate mr-2" title={item.name}>{item.name}</span>
+                                  <span className="text-gray-500 font-semibold whitespace-nowrap">{formatCHF(item.sales)}</span>
+                                </div>
+                              ))}
+                              {items.length > 8 && <p className="text-xs text-gray-400 text-center pt-1">+{items.length-8} weitere</p>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* ========== DB-Ranking Tab (data) ========== */}
+                {activeTab === 'dbranking' && (
+                  <div className="fade-in">
+                    <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
+                      <div className="flex items-center gap-3 mb-6">
+                        <div className="w-10 h-10 bg-gradient-to-br from-wine-500 to-wine-700 rounded-xl flex items-center justify-center"><Icon name="award" size={20} className="text-white" /></div>
+                        <div>
+                          <h3 className="font-bold text-lg text-gray-800">Top 10 — DB pro Flasche</h3>
+                          <p className="text-sm text-gray-500">Weine mit dem höchsten Deckungsbeitrag pro Flasche</p>
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        {(analysisResult.dbRankingTop10||[]).map((item,i) => {
+                          const maxDb = analysisResult.dbRankingTop10[0]?.avgDbPerUnit || 1;
+                          const pct = (item.avgDbPerUnit / maxDb * 100);
+                          return (
+                            <div key={item.name} className="flex items-center gap-4 stagger-item">
+                              <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold ${i===0?'bg-wine-100 text-wine-700':i===1?'bg-wine-50 text-wine-600':i===2?'bg-wine-50 text-wine-500':'bg-gray-50 text-gray-500'}`}>{i+1}</div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex justify-between items-center mb-1">
+                                  <span className="font-medium text-gray-800 truncate mr-4" title={item.name}>{item.name}</span>
+                                  <div className="text-right whitespace-nowrap">
+                                    <span className="text-sm font-bold text-wine-700">{formatCHF(item.avgDbPerUnit)}</span>
+                                    <span className="text-xs text-gray-400 ml-2">({formatNum(item.vol)} Fl.)</span>
+                                  </div>
+                                </div>
+                                <div className="w-full bg-gray-100 rounded-full h-2">
+                                  <div className="bg-gradient-to-r from-wine-400 to-wine-600 h-2 rounded-full bar-animate" style={{width:`${pct}%`}}></div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ========== Matrix Tab (with search from features) ========== */}
+                {activeTab === 'matrix' && (
+                  <div className="fade-in">
+                    {/* Search bar (features) */}
+                    <div className="mb-5 relative">
+                      <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                        <Icon name="search" size={16} className="text-gray-400" />
+                      </div>
+                      <input
+                        type="text"
+                        value={matrixSearch}
+                        onChange={(e) => setMatrixSearch(e.target.value)}
+                        placeholder="Weine suchen / filtern..."
+                        className="w-full pl-11 pr-10 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-wine-500 focus:border-transparent transition shadow-sm"
+                      />
+                      {matrixSearch && (
+                        <button onClick={() => setMatrixSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center hover:bg-gray-100 rounded-lg transition">
+                          <Icon name="x" size={14} className="text-gray-400" />
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                      {[
+                        { key:'stars', title:'Stars', sub:'Hohe Menge + Hoher DB', color:'from-emerald-400 to-emerald-500', bg:'bg-emerald-50', border:'border-emerald-100', dot:'bg-emerald-500', val:i=>formatCHF(i.sales) },
+                        { key:'cows', title:'Volumenträger', sub:'Hohe Menge + Tiefer DB', color:'from-blue-400 to-blue-500', bg:'bg-blue-50', border:'border-blue-100', dot:'bg-blue-500', val:i=>`${formatNum(i.vol)} Fl.` },
+                        { key:'questions', title:'Schläfer', sub:'Tiefe Menge + Hoher DB', color:'from-amber-400 to-amber-500', bg:'bg-amber-50', border:'border-amber-100', dot:'bg-amber-400', val:i=>`${formatCHF(i.avgDbPerUnit)} / Fl.` },
+                        { key:'dogs', title:'Penner', sub:'Tiefe Menge + Tiefer DB', color:'from-red-400 to-red-500', bg:'bg-red-50', border:'border-red-100', dot:'bg-red-500', val:i=>`${formatNum(i.vol)} Fl.` }
+                      ].map(cat => (
+                        <div key={cat.key} className={`bg-white rounded-2xl border ${cat.border} p-6 shadow-sm hover:shadow-md transition-all stagger-item`}>
+                          <div className="flex items-center gap-3 mb-5">
+                            <div className={`w-10 h-10 bg-gradient-to-br ${cat.color} rounded-xl flex items-center justify-center`}>
+                              <span className="text-white font-bold text-sm">{analysisResult.matrix[cat.key].length}</span>
+                            </div>
+                            <div>
+                              <h3 className="font-bold text-gray-800">{cat.title}</h3>
+                              <p className="text-xs text-gray-400">{cat.sub}</p>
+                            </div>
+                          </div>
+                          <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+                            {(() => {
+                              const filtered = analysisResult.matrix[cat.key].filter(item =>
+                                !matrixSearch || item.name.toLowerCase().includes(matrixSearch.toLowerCase())
+                              );
+                              return filtered.length > 0 ? filtered.slice(0, matrixSearch ? 20 : 10).map(item => (
+                                <div key={item.name} className={`flex justify-between items-center text-sm py-2 px-3 rounded-lg ${cat.bg}/50 hover:${cat.bg} transition-colors`}>
+                                  <span className="font-medium text-gray-700 truncate mr-4" title={item.name}>
+                                    {matrixSearch ? (() => {
+                                      const idx = item.name.toLowerCase().indexOf(matrixSearch.toLowerCase());
+                                      if (idx === -1) return item.name;
+                                      return <>{item.name.slice(0, idx)}<mark className="bg-yellow-200 text-gray-900 rounded px-0.5">{item.name.slice(idx, idx + matrixSearch.length)}</mark>{item.name.slice(idx + matrixSearch.length)}</>;
+                                    })() : item.name}
+                                  </span>
+                                  <span className="text-gray-500 font-semibold whitespace-nowrap">{cat.val(item)}</span>
+                                </div>
+                              )) : <p className="text-gray-400 text-sm py-4 text-center">{matrixSearch ? 'Keine Treffer' : 'Keine Einträge'}</p>;
+                            })()}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* ========== Comparison Tab (features) ========== */}
+                {activeTab === 'comparison' && (
+                  <div className="fade-in">
+                    {!analysisResult.vorjahrSales ? (
+                      <div className="text-center py-20 bg-white rounded-2xl border border-gray-100 shadow-sm">
+                        <div className="w-16 h-16 bg-amber-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                          <Icon name="calendar-x" size={32} className="text-amber-500" />
+                        </div>
+                        <h3 className="text-lg font-bold text-gray-800">Keine Vorjahresdaten</h3>
+                        <p className="text-gray-500 text-sm mt-2 max-w-md mx-auto">
+                          Lade einen POS-Export vom Vorjahr hoch, um den Jahresvergleich zu sehen.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-5">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                          {(() => {
+                            const delta = analysisResult.totalSales - analysisResult.vorjahrSales;
+                            const pct = analysisResult.vorjahrSales > 0 ? (delta / analysisResult.vorjahrSales * 100) : 0;
+                            const isUp = delta >= 0;
+                            return [
+                              { label: 'Umsatz Aktuell', value: formatCHF(analysisResult.totalSales), color: 'wine' },
+                              { label: 'Umsatz Vorjahr', value: formatCHF(analysisResult.vorjahrSales), color: 'gray' },
+                              { label: 'Differenz', value: `${isUp ? '+' : ''}${formatCHF(delta)}`, sub: `${isUp ? '+' : ''}${pct.toFixed(1)}%`, isUp, color: isUp ? 'emerald' : 'red' }
+                            ].map((card, i) => (
+                              <div key={i} className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm stagger-item">
+                                <span className="text-sm font-medium text-gray-500">{card.label}</span>
+                                <div className={`text-2xl font-extrabold mt-2 ${card.color === 'emerald' ? 'text-emerald-600' : card.color === 'red' ? 'text-red-600' : 'text-gray-900'}`}>{card.value}</div>
+                                {card.sub && (
+                                  <div className={`mt-2 inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold ${card.isUp ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                                    <Icon name={card.isUp ? "trending-up" : "trending-down"} size={13} />
+                                    {card.sub}
+                                  </div>
+                                )}
+                              </div>
+                            ));
+                          })()}
+                        </div>
+                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                          <div className="flex items-center gap-3 p-6 border-b border-gray-100">
+                            <div className="w-10 h-10 bg-gradient-to-br from-wine-400 to-wine-500 rounded-xl flex items-center justify-center">
+                              <Icon name="git-compare-arrows" size={20} className="text-white" />
+                            </div>
+                            <div>
+                              <h3 className="font-bold text-lg text-gray-800">Vergleich pro Wein</h3>
+                              <p className="text-xs text-gray-400">Aktuell vs. Vorjahr - sortiert nach Umsatzdifferenz</p>
+                            </div>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                                  <th className="text-left px-6 py-3 font-semibold">Wein</th>
+                                  <th className="text-right px-4 py-3 font-semibold">Aktuell</th>
+                                  <th className="text-right px-4 py-3 font-semibold">Vorjahr</th>
+                                  <th className="text-right px-4 py-3 font-semibold">+/- CHF</th>
+                                  <th className="text-right px-6 py-3 font-semibold">+/- %</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(() => {
+                                  const vj = analysisResult.vjItemSales || {};
+                                  const allNames = new Set([
+                                    ...Object.values(analysisResult.matrix).flat().map(i => i.name),
+                                    ...Object.keys(vj)
+                                  ]);
+                                  const rows = [...allNames].map(name => {
+                                    const curr = Object.values(analysisResult.matrix).flat().find(i => i.name === name);
+                                    const prev = vj[name];
+                                    const currSales = curr ? curr.sales : 0;
+                                    const prevSales = prev ? prev.sales : 0;
+                                    const delta = currSales - prevSales;
+                                    const pct = prevSales > 0 ? (delta / prevSales * 100) : (currSales > 0 ? 100 : 0);
+                                    return { name, currSales, prevSales, delta, pct };
+                                  }).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+                                  return rows.slice(0, 50).map((row, i) => (
+                                    <tr key={row.name} className={`border-t border-gray-50 hover:bg-gray-50 transition ${i % 2 === 0 ? '' : 'bg-gray-50/30'}`}>
+                                      <td className="px-6 py-3 font-medium text-gray-800 max-w-xs truncate" title={row.name}>{row.name}</td>
+                                      <td className="px-4 py-3 text-right text-gray-700 font-semibold">{formatCHF(row.currSales)}</td>
+                                      <td className="px-4 py-3 text-right text-gray-500">{formatCHF(row.prevSales)}</td>
+                                      <td className={`px-4 py-3 text-right font-semibold ${row.delta >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                        {row.delta >= 0 ? '+' : ''}{formatCHF(row.delta)}
+                                      </td>
+                                      <td className="px-6 py-3 text-right">
+                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${row.delta >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                                          <Icon name={row.delta >= 0 ? "arrow-up" : "arrow-down"} size={10} />
+                                          {row.pct >= 0 ? '+' : ''}{row.pct.toFixed(1)}%
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  ));
+                                })()}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ========== Details/Verteilung Tab (charts: Chart.js) ========== */}
+                {activeTab === 'details' && (
+                  <div className="fade-in space-y-5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                      {/* Donut Chart: Countries */}
+                      <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
+                        <h3 className="font-bold text-lg text-gray-800 mb-6 flex items-center gap-2">
+                          <Icon name="globe" size={20} className="text-blue-500" />Umsatz nach Land
+                        </h3>
+                        <div className="relative" style={{maxHeight: '320px', display: 'flex', justifyContent: 'center'}}>
+                          <ChartCanvas
+                            id="countryDonut"
+                            deps={[analysisResult.countries]}
+                            renderChart={(ctx) => {
+                              const data = analysisResult.countries.slice(0, 8);
+                              const rest = analysisResult.countries.slice(8);
+                              const labels = data.map(c => c.name);
+                              const values = data.map(c => c.sales);
+                              if (rest.length > 0) { labels.push('Übrige'); values.push(rest.reduce((s, c) => s + c.sales, 0)); }
+                              const colors = ['#1e40af','#2563eb','#3b82f6','#60a5fa','#93c5fd','#7c3aed','#a78bfa','#c4b5fd','#ddd6fe'];
+                              return new Chart(ctx, {
+                                type: 'doughnut',
+                                data: { labels, datasets: [{ data: values, backgroundColor: colors.slice(0, labels.length), borderWidth: 2, borderColor: '#ffffff', hoverBorderWidth: 3, hoverOffset: 6 }] },
+                                options: { responsive: true, maintainAspectRatio: true, cutout: '55%',
+                                  plugins: {
+                                    legend: { position: 'bottom', labels: { padding: 16, usePointStyle: true, pointStyleWidth: 10, font: { family: 'Inter', size: 12 } } },
+                                    tooltip: { backgroundColor: '#1f2937', titleFont: { family: 'Inter', weight: '600' }, bodyFont: { family: 'Inter' }, padding: 12, cornerRadius: 10,
+                                      callbacks: { label: (tip) => { const total = tip.dataset.data.reduce((a, b) => a + b, 0); const pct = ((tip.raw / total) * 100).toFixed(1); return ` ${tip.label}: ${formatCHF(tip.raw)} (${pct}%)`; } } }
+                                  }
+                                }
+                              });
+                            }}
+                          />
+                        </div>
+                      </div>
+                      {/* Donut Chart: Wine Types */}
+                      <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
+                        <h3 className="font-bold text-lg text-gray-800 mb-6 flex items-center gap-2">
+                          <Icon name="pie-chart" size={20} className="text-purple-500" />Umsatz nach Typ
+                        </h3>
+                        <div className="relative" style={{maxHeight: '320px', display: 'flex', justifyContent: 'center'}}>
+                          <ChartCanvas
+                            id="typeDonut"
+                            deps={[analysisResult.types]}
+                            renderChart={(ctx) => {
+                              const data = analysisResult.types.slice(0, 8);
+                              const rest = analysisResult.types.slice(8);
+                              const labels = data.map(t => t.name);
+                              const values = data.map(t => t.sales);
+                              if (rest.length > 0) { labels.push('Übrige'); values.push(rest.reduce((s, t) => s + t.sales, 0)); }
+                              const colors = ['#7a1c3e','#ab1f4c','#cc2d5e','#e04974','#ec7696','#f4a9bb','#7c3aed','#a78bfa','#c4b5fd'];
+                              return new Chart(ctx, {
+                                type: 'doughnut',
+                                data: { labels, datasets: [{ data: values, backgroundColor: colors.slice(0, labels.length), borderWidth: 2, borderColor: '#ffffff', hoverBorderWidth: 3, hoverOffset: 6 }] },
+                                options: { responsive: true, maintainAspectRatio: true, cutout: '55%',
+                                  plugins: {
+                                    legend: { position: 'bottom', labels: { padding: 16, usePointStyle: true, pointStyleWidth: 10, font: { family: 'Inter', size: 12 } } },
+                                    tooltip: { backgroundColor: '#1f2937', titleFont: { family: 'Inter', weight: '600' }, bodyFont: { family: 'Inter' }, padding: 12, cornerRadius: 10,
+                                      callbacks: { label: (tip) => { const total = tip.dataset.data.reduce((a, b) => a + b, 0); const pct = ((tip.raw / total) * 100).toFixed(1); return ` ${tip.label}: ${formatCHF(tip.raw)} (${pct}%)`; } } }
+                                  }
+                                }
+                              });
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    {/* Horizontal bar chart - Top 10 */}
+                    <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
+                      <div className="flex items-center gap-3 mb-6">
+                        <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-amber-500 rounded-xl flex items-center justify-center">
+                          <Icon name="trophy" size={20} className="text-white" />
+                        </div>
+                        <h3 className="font-bold text-lg text-gray-800">Top 10 Weine nach Umsatz</h3>
+                      </div>
+                      <div style={{height: '400px'}}>
+                        <ChartCanvas
+                          id="top10Bar"
+                          deps={[analysisResult.matrix]}
+                          renderChart={(ctx) => {
+                            const allWines = [...analysisResult.matrix.stars,...analysisResult.matrix.cows,...analysisResult.matrix.questions,...analysisResult.matrix.dogs].sort((a, b) => b.sales - a.sales).slice(0, 10);
+                            const labels = allWines.map(w => w.name.length > 30 ? w.name.substring(0, 28) + '...' : w.name);
+                            const salesData = allWines.map(w => w.sales);
+                            const dbData = allWines.map(w => w.db);
+                            return new Chart(ctx, {
+                              type: 'bar',
+                              data: { labels, datasets: [
+                                { label: 'Umsatz (CHF)', data: salesData, backgroundColor: 'rgba(171, 31, 76, 0.85)', borderColor: '#ab1f4c', borderWidth: 1, borderRadius: 6, borderSkipped: false },
+                                { label: 'Deckungsbeitrag (CHF)', data: dbData, backgroundColor: 'rgba(16, 185, 129, 0.7)', borderColor: '#10b981', borderWidth: 1, borderRadius: 6, borderSkipped: false }
+                              ] },
+                              options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+                                plugins: {
+                                  legend: { position: 'top', align: 'end', labels: { usePointStyle: true, pointStyleWidth: 10, padding: 20, font: { family: 'Inter', size: 12 } } },
+                                  tooltip: { backgroundColor: '#1f2937', titleFont: { family: 'Inter', weight: '600' }, bodyFont: { family: 'Inter' }, padding: 12, cornerRadius: 10,
+                                    callbacks: { title: (tips) => allWines[tips[0].dataIndex].name, label: (tip) => ` ${tip.dataset.label}: ${formatCHF(tip.raw)}` } }
+                                },
+                                scales: {
+                                  x: { grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { font: { family: 'Inter', size: 11 }, callback: (v) => new Intl.NumberFormat('de-CH', {style:'currency',currency:'CHF',maximumFractionDigits:0}).format(v) } },
+                                  y: { grid: { display: false }, ticks: { font: { family: 'Inter', size: 12 }, color: '#374151' } }
+                                }
+                              }
+                            });
+                          }}
+                        />
+                      </div>
+                    </div>
+                    {/* Detail tables */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                      <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
+                        <h3 className="font-bold text-lg text-gray-800 mb-6 flex items-center gap-2">
+                          <Icon name="globe" size={20} className="text-blue-500" />Details nach Land
+                        </h3>
+                        <div className="space-y-3 max-h-96 overflow-y-auto">
+                          {analysisResult.countries.map(c => (
+                            <div key={c.name} className="flex justify-between items-center text-sm py-2.5 px-3 rounded-lg hover:bg-gray-50 transition">
+                              <span className="font-medium text-gray-700">{c.name}</span>
+                              <div className="text-right">
+                                <span className="font-semibold text-gray-800">{formatCHF(c.sales)}</span>
+                                <span className="text-gray-400 text-xs ml-2">({c.pct.toFixed(1)}%)</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
+                        <h3 className="font-bold text-lg text-gray-800 mb-6 flex items-center gap-2">
+                          <Icon name="pie-chart" size={20} className="text-purple-500" />Details nach Typ
+                        </h3>
+                        <div className="space-y-3 max-h-96 overflow-y-auto">
+                          {analysisResult.types.map(t => (
+                            <div key={t.name} className="flex justify-between items-center text-sm py-2.5 px-3 rounded-lg hover:bg-gray-50 transition">
+                              <span className="font-medium text-gray-700">{t.name}</span>
+                              <div className="text-right">
+                                <span className="font-semibold text-gray-800">{formatCHF(t.sales)}</span>
+                                <span className="text-gray-400 text-xs ml-2">({t.pct.toFixed(1)}%)</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ========== Trends Tab (data, conditional) ========== */}
+                {activeTab === 'trends' && (analysisResult.winners?.length > 0 || analysisResult.losers?.length > 0) && (
+                  <div className="fade-in grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div className="bg-white rounded-2xl border border-emerald-200 p-6 shadow-sm">
+                      <div className="flex items-center gap-3 mb-6">
+                        <div className="w-10 h-10 bg-gradient-to-br from-emerald-400 to-emerald-500 rounded-xl flex items-center justify-center"><Icon name="trending-up" size={20} className="text-white" /></div>
+                        <div>
+                          <h3 className="font-bold text-lg text-gray-800">Gewinner</h3>
+                          <p className="text-xs text-gray-400">Grösste Umsatz-Steigerung vs. Vorjahr</p>
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        {(analysisResult.winners||[]).map((item,i) => (
+                          <div key={item.name} className="flex items-center justify-between py-3 px-4 rounded-xl bg-emerald-50/50 hover:bg-emerald-50 transition stagger-item">
+                            <div className="min-w-0 mr-3">
+                              <div className="font-medium text-gray-800 truncate" title={item.name}>{item.name}</div>
+                              <div className="text-xs text-gray-500">{formatCHF(item.salesVJ)} → {formatCHF(item.salesNow)}</div>
+                            </div>
+                            <div className="text-right flex-shrink-0">
+                              <div className="text-sm font-bold text-emerald-700">+{formatCHF(item.diff)}</div>
+                              <div className="text-xs font-semibold text-emerald-600">+{item.pctChange.toFixed(1)}%</div>
+                            </div>
+                          </div>
+                        ))}
+                        {(!analysisResult.winners||analysisResult.winners.length===0) && <p className="text-gray-400 text-sm text-center py-4">Keine Gewinner</p>}
+                      </div>
+                    </div>
+                    <div className="bg-white rounded-2xl border border-red-200 p-6 shadow-sm">
+                      <div className="flex items-center gap-3 mb-6">
+                        <div className="w-10 h-10 bg-gradient-to-br from-red-400 to-red-500 rounded-xl flex items-center justify-center"><Icon name="trending-down" size={20} className="text-white" /></div>
+                        <div>
+                          <h3 className="font-bold text-lg text-gray-800">Verlierer</h3>
+                          <p className="text-xs text-gray-400">Grösster Umsatz-Rückgang vs. Vorjahr</p>
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        {(analysisResult.losers||[]).map((item,i) => (
+                          <div key={item.name} className="flex items-center justify-between py-3 px-4 rounded-xl bg-red-50/50 hover:bg-red-50 transition stagger-item">
+                            <div className="min-w-0 mr-3">
+                              <div className="font-medium text-gray-800 truncate" title={item.name}>{item.name}</div>
+                              <div className="text-xs text-gray-500">{formatCHF(item.salesVJ)} → {formatCHF(item.salesNow)}</div>
+                            </div>
+                            <div className="text-right flex-shrink-0">
+                              <div className="text-sm font-bold text-red-700">{formatCHF(item.diff)}</div>
+                              <div className="text-xs font-semibold text-red-600">{item.pctChange.toFixed(1)}%</div>
+                            </div>
+                          </div>
+                        ))}
+                        {(!analysisResult.losers||analysisResult.losers.length===0) && <p className="text-gray-400 text-sm text-center py-4">Keine Verlierer</p>}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+              </div>
+            )}
+
+            {/* Modal: Unmatched Items */}
+            {uiState.showUnmatched && (
+              <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-3xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden fade-in-scale mobile-modal">
+                  <div className="flex justify-between items-center p-6 border-b border-gray-100">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center"><Icon name="alert-circle" size={20} className="text-amber-600" /></div>
+                      <div>
+                        <h2 className="text-lg font-bold text-gray-900">Unbekannte Positionen</h2>
+                        <p className="text-xs text-gray-500">Eingaben werden lokal gespeichert.</p>
+                      </div>
+                    </div>
+                    <button onClick={()=>setUiState({...uiState,showUnmatched:false})} className="w-9 h-9 flex items-center justify-center hover:bg-gray-100 rounded-xl transition"><Icon name="x" size={18} /></button>
+                  </div>
+                  <div className="p-6 overflow-y-auto flex-1 bg-gray-50/50">
+                    <div className="space-y-3">
+                      {unmatchedItems.map((item,i) => (
+                        <div key={item.name} className="flex flex-col lg:flex-row lg:items-center gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm hover:border-gray-300 transition mobile-unmatched-row">
+                          <div className="flex-1 min-w-0">
+                            <span className="font-bold text-gray-800 block truncate" title={item.name}>{item.name}</span>
+                            <span className="text-xs text-gray-500">Menge: <span className="font-semibold text-gray-700">{item.qty}</span></span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 mobile-input-group">
+                            <input type="number" placeholder="VP" className="w-20 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition" id={`vp-${i}`} />
+                            <input type="number" placeholder="EP" className="w-20 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition" id={`ep-${i}`} />
+                            <button onClick={()=>{const vp=parseFloat(document.getElementById(`vp-${i}`).value);const ep=parseFloat(document.getElementById(`ep-${i}`).value);if(vp>0&&ep>=0){saveRule(item.name,{type:'custom',vp,ep});showToast("Gespeichert","success");}else showToast("VP muss > 0 sein");}}
+                              className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition shadow-sm">OK</button>
+                            <div className="w-px h-8 bg-gray-200 hidden lg:block"></div>
+                            {uiState.confirmIgnore===item.name ? (
+                              <div className="flex items-center gap-1.5">
+                                <button onClick={()=>{saveRule(item.name,{type:'ignore'});setUiState({...uiState,confirmIgnore:null});}}
+                                  className="px-3 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition font-medium">Ja</button>
+                                <button onClick={()=>setUiState({...uiState,confirmIgnore:null})}
+                                  className="px-3 py-2 bg-gray-100 text-gray-600 text-sm rounded-lg hover:bg-gray-200 transition font-medium">Nein</button>
+                              </div>
+                            ) : (
+                              <button onClick={()=>setUiState({...uiState,confirmIgnore:item.name})}
+                                className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-500 text-sm font-medium rounded-lg hover:bg-red-50 hover:text-red-600 transition">
+                                <Icon name="trash-2" size={14} />Ignorieren
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                      {unmatchedItems.length===0 && (
+                        <div className="text-center py-16">
+                          <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-4"><Icon name="circle-check" size={32} className="text-emerald-500" /></div>
+                          <h3 className="text-lg font-bold text-gray-800">Alles geklärt</h3>
+                          <p className="text-gray-500 text-sm mt-1">Keine offenen Positionen.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="border-t border-gray-100 mt-12">
+            <div className="max-w-7xl mx-auto px-6 md:px-10 py-6 flex items-center justify-between text-xs text-gray-400">
+              <span>Wein Analyse Tool</span>
+              <span>{masterData.length > 0 ? `${masterData.length} Weine in Masterliste` : 'Keine Daten geladen'}</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
