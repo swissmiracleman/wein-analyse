@@ -320,17 +320,64 @@
       return { valid: true };
     };
 
-    const filterWithLLM = async (posData, key) => {
-      if (!key) return posData;
+    /** @description LLM Provider Konfiguration */
+    const LLM_PROVIDERS = {
+      gemini: { name: 'Google Gemini', placeholder: 'AIza...', icon: 'sparkles', color: 'blue',
+        url: (key) => `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${key}`,
+        buildBody: (prompt) => ({ contents:[{parts:[{text:prompt}]}], systemInstruction:{parts:[{text:"Präzisions-Datenanalyst für Schweizer Gastronomie. Nur pures JSON."}]}, generationConfig:{responseMimeType:"application/json"} }),
+        extractText: (r) => r.candidates?.[0]?.content?.parts?.[0]?.text,
+        headers: (key) => ({ 'Content-Type': 'application/json' })
+      },
+      openai: { name: 'OpenAI (GPT)', placeholder: 'sk-...', icon: 'brain', color: 'emerald',
+        url: () => 'https://api.openai.com/v1/chat/completions',
+        buildBody: (prompt) => ({ model:'gpt-4o-mini', messages:[{role:'system',content:'Präzisions-Datenanalyst für Schweizer Gastronomie. Antworte nur in purem JSON.'},{role:'user',content:prompt}], response_format:{type:'json_object'} }),
+        extractText: (r) => r.choices?.[0]?.message?.content,
+        headers: (key) => ({ 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` })
+      },
+      claude: { name: 'Anthropic Claude', placeholder: 'sk-ant-...', icon: 'message-circle', color: 'orange',
+        url: () => 'https://api.anthropic.com/v1/messages',
+        buildBody: (prompt) => ({ model:'claude-haiku-4-5-20251001', max_tokens:4096, system:'Präzisions-Datenanalyst für Schweizer Gastronomie. Antworte nur in purem JSON.', messages:[{role:'user',content:prompt}] }),
+        extractText: (r) => r.content?.[0]?.text,
+        headers: (key) => ({ 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' })
+      },
+      mistral: { name: 'Mistral AI', placeholder: 'M...', icon: 'wind', color: 'purple',
+        url: () => 'https://api.mistral.ai/v1/chat/completions',
+        buildBody: (prompt) => ({ model:'mistral-small-latest', messages:[{role:'system',content:'Präzisions-Datenanalyst für Schweizer Gastronomie. Antworte nur in purem JSON.'},{role:'user',content:prompt}], response_format:{type:'json_object'} }),
+        extractText: (r) => r.choices?.[0]?.message?.content,
+        headers: (key) => ({ 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` })
+      }
+    };
+
+    /** @description Filtert POS-Daten via LLM — unterstützt Gemini, OpenAI, Claude, Mistral */
+    const filterWithLLM = async (posData, key, provider) => {
+      if (!key || !provider || !LLM_PROVIDERS[provider]) return posData;
+      const cfg = LLM_PROVIDERS[provider];
       const names = [...new Set(posData.map(r => r.Bezeichnung||r.Artikelname||"").filter(Boolean))];
+      const prompt = `Analysiere diese Gastronomie-Artikel. Gib ein JSON Array zurück mit NUR Wein/Schaumwein/Offenwein. Keine Biere, Soft, Spirituosen, Speisen. Nur das Array, keine Erklärung.\n\n${JSON.stringify(names)}`;
       try {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${key}`, {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ contents:[{parts:[{text:`Analysiere diese Gastronomie-Artikel. Gib ein JSON Array zurück mit NUR Wein/Schaumwein/Offenwein. Keine Biere, Soft, Spirituosen, Speisen.\n\n${JSON.stringify(names)}`}]}], systemInstruction:{parts:[{text:"Präzisions-Datenanalyst für Schweizer Gastronomie. Nur pures JSON."}]}, generationConfig:{responseMimeType:"application/json"} })
+        const res = await fetch(cfg.url(key), {
+          method: 'POST',
+          headers: cfg.headers(key),
+          body: JSON.stringify(cfg.buildBody(prompt))
         });
-        const r = await res.json(); const t = r.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (t) { try { const w = JSON.parse(t); if (Array.isArray(w)) { const s = new Set(w); return posData.filter(r => { const n=r.Bezeichnung||r.Artikelname||""; return s.has(n)||OPEN_POS_KEYWORDS.some(k=>n.toLowerCase().includes(k)); }); } } catch(e){} }
-      } catch(e) { console.error("LLM failed:",e); }
+        if (!res.ok) { console.error(`LLM ${provider} error:`, res.status); return posData; }
+        const r = await res.json();
+        const t = cfg.extractText(r);
+        if (t) {
+          try {
+            let parsed = JSON.parse(t);
+            // Manche LLMs wrappen in ein Objekt statt Array
+            if (!Array.isArray(parsed) && typeof parsed === 'object') {
+              const vals = Object.values(parsed);
+              parsed = vals.find(v => Array.isArray(v)) || [];
+            }
+            if (Array.isArray(parsed)) {
+              const s = new Set(parsed);
+              return posData.filter(r => { const n=r.Bezeichnung||r.Artikelname||""; return s.has(n)||OPEN_POS_KEYWORDS.some(k=>n.toLowerCase().includes(k)); });
+            }
+          } catch(e) { console.error("LLM JSON parse failed:", e); }
+        }
+      } catch(e) { console.error("LLM failed:", e); }
       return posData;
     };
 
@@ -741,7 +788,8 @@
       const analysisRef = useRef(0);
 
       // Architect: useLocalStorage for persistent state
-      const [geminiKey, setGeminiKey] = useLocalStorage('weinAnalyseGeminiKey', "");
+      const [llmProvider, setLlmProvider] = useLocalStorage('weinAnalyseLLMProvider', 'gemini');
+      const [llmKey, setLlmKey] = useLocalStorage('weinAnalyseLLMKey', "");
       const [learnedRules, setLearnedRules] = useLocalStorage('weinAnalyseRules', {});
       const [darkMode, setDarkMode] = useLocalStorage('weinAnalyseDarkMode', false);
       const [wineNotes, setWineNotes] = useLocalStorage('weinAnalyseNotes', {});
@@ -794,7 +842,7 @@
       // --- Helpers ---
       const showToast = (msg, type="error") => { setToast({msg,type}); setTimeout(()=>setToast(null), 4000); };
       const saveRule = (name, obj) => { setLearnedRules(prev => ({...prev, [name]: obj})); };
-      const saveGeminiKey = (k) => { setGeminiKey(k); setShowKeyInput(false); };
+      const saveLlmKey = (k) => { setLlmKey(k); setShowKeyInput(false); };
 
       // --- Premium-UX: Command handler ---
       const handleCommand = useCallback((cmdId) => {
@@ -895,10 +943,10 @@
         curPos = getFilteredPosData(curPos);
         if (curVJ.length) curVJ = getFilteredPosData(curVJ);
 
-        if (useLLM&&geminiKey) {
+        if (useLLM&&llmKey) {
           setCalcStatus(STRINGS.analysis.kiFilter);
-          curPos = await filterWithLLM(curPos,geminiKey); if(thisRun!==analysisRef.current) return;
-          if(posDataVorjahr.length){ curVJ = await filterWithLLM(curVJ,geminiKey); if(thisRun!==analysisRef.current) return; }
+          curPos = await filterWithLLM(curPos,llmKey,llmProvider); if(thisRun!==analysisRef.current) return;
+          if(posDataVorjahr.length){ curVJ = await filterWithLLM(curVJ,llmKey,llmProvider); if(thisRun!==analysisRef.current) return; }
         }
         setCalcStatus(STRINGS.analysis.matching);
         setTimeout(() => {
@@ -971,7 +1019,7 @@
         }, 100);
       };
 
-      useEffect(()=>{ if(masterData.length>0&&posData.length>0) runAnalysis(); }, [masterData,posData,posDataVorjahr,learnedRules,useLLM,geminiKey,zeitraumFilter,customDateFrom,customDateTo]);
+      useEffect(()=>{ if(masterData.length>0&&posData.length>0) runAnalysis(); }, [masterData,posData,posDataVorjahr,learnedRules,useLLM,llmKey,llmProvider,zeitraumFilter,customDateFrom,customDateTo]);
 
       // Dark Mode effect
       useEffect(() => {
@@ -1121,15 +1169,8 @@
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 mobile-header-actions sm:flex-row">
-                  {/* Management: Betrieb Switcher */}
-                  {betriebe.length > 1 && (
-                    <select value={currentBetrieb} onChange={e => setCurrentBetrieb(e.target.value)}
-                      className="px-3 py-2.5 rounded-xl text-sm font-medium bg-white/10 text-white/90 border border-white/10 hover:bg-white/20 transition appearance-none cursor-pointer" style={{backgroundImage:'none'}}>
-                      {betriebe.map(b => <option key={b.id} value={b.id} style={{color:'#1f2937'}}>{b.name}</option>)}
-                    </select>
-                  )}
                   <button onClick={() => setShowBetriebModal(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-white/20 text-white border border-white/20 hover:bg-white/30 transition">
-                    <Icon name="building-2" size={15} />Betriebe<span className="kbd-badge">B</span>
+                    <Icon name="building-2" size={15} />{betriebInfo.name}{betriebe.length > 1 ? ` (${betriebe.length})` : ''}<span className="kbd-badge">B</span>
                   </button>
                   <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-white/20 text-white border border-white/20 hover:bg-white/30 transition">
                     <Icon name="printer" size={15} />Drucken<span className="kbd-badge">P</span>
@@ -1139,8 +1180,8 @@
                     <Icon name={darkMode ? "sun" : "moon"} size={15} />{darkMode ? 'Light Mode' : 'Dark Mode'}<span className="kbd-badge">D</span>
                   </button>
                   <button onClick={()=>setShowKeyInput(!showKeyInput)}
-                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${geminiKey?'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 hover:bg-emerald-500/30':'bg-white/20 text-white border border-white/20 hover:bg-white/30'}`}>
-                    <Icon name="key" size={15} />{geminiKey ? 'API-Key aktiv' : 'API-Key'}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${llmKey?'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 hover:bg-emerald-500/30':'bg-white/20 text-white border border-white/20 hover:bg-white/30'}`}>
+                    <Icon name="brain" size={15} />{llmKey ? LLM_PROVIDERS[llmProvider]?.name : 'KI-Anbieter'}
                   </button>
                   <button onClick={()=>setUseLLM(!useLLM)}
                     className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${useLLM?'bg-purple-500/20 text-purple-200 border border-purple-400/30 hover:bg-purple-500/30':'bg-white/20 text-white border border-white/20 hover:bg-white/30'}`}>
@@ -1175,18 +1216,36 @@
 
           <div className="app-content max-w-7xl mx-auto px-6 md:px-10 py-8 space-y-8">
 
-            {/* API Key Input */}
+            {/* LLM Provider & API Key */}
             {showKeyInput && (
               <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm fade-in-scale no-print">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center"><Icon name="key" size={20} className="text-purple-600" /></div>
-                  <div><h3 className="font-semibold text-gray-800">{STRINGS.gemini.title}</h3><p className="text-xs text-gray-500">{STRINGS.gemini.sub}</p></div>
+                <div className="flex items-center gap-3 mb-5">
+                  <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center"><Icon name="brain" size={20} className="text-purple-600" /></div>
+                  <div><h3 className="font-semibold text-gray-800">KI-Anbieter & API-Key</h3><p className="text-xs text-gray-500">Wähle deinen LLM-Anbieter. Key wird nur lokal gespeichert.</p></div>
                 </div>
+
+                {/* Provider Auswahl */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-5">
+                  {Object.entries(LLM_PROVIDERS).map(([id, cfg]) => (
+                    <button key={id} onClick={() => setLlmProvider(id)}
+                      className={`flex items-center gap-2 p-3 rounded-xl text-sm font-medium transition-all border-2 ${llmProvider === id ? `bg-${cfg.color}-50 border-${cfg.color}-300 text-${cfg.color}-700` : 'bg-gray-50 border-transparent text-gray-600 hover:bg-gray-100'}`}>
+                      <Icon name={cfg.icon} size={16} />{cfg.name}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Key Eingabe */}
                 <div className="flex gap-3">
-                  <input type="password" defaultValue={geminiKey} id="gemini-key-input" placeholder="AIza..." className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition" />
-                  <button onClick={()=>saveGeminiKey(document.getElementById('gemini-key-input').value)} className="px-5 py-2.5 bg-purple-600 text-white text-sm font-semibold rounded-xl hover:bg-purple-700 transition shadow-sm">{STRINGS.gemini.save}</button>
-                  {geminiKey && <button onClick={()=>saveGeminiKey("")} className="px-5 py-2.5 bg-red-50 text-red-600 text-sm font-semibold rounded-xl hover:bg-red-100 transition">{STRINGS.gemini.delete}</button>}
+                  <input type="password" defaultValue={llmKey} id="llm-key-input"
+                    placeholder={LLM_PROVIDERS[llmProvider]?.placeholder || 'API-Key...'}
+                    className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition" />
+                  <button onClick={()=>saveLlmKey(document.getElementById('llm-key-input').value)}
+                    className="px-5 py-2.5 bg-purple-600 text-white text-sm font-semibold rounded-xl hover:bg-purple-700 transition shadow-sm">Speichern</button>
+                  {llmKey && <button onClick={()=>saveLlmKey("")}
+                    className="px-5 py-2.5 bg-red-50 text-red-600 text-sm font-semibold rounded-xl hover:bg-red-100 transition">Löschen</button>}
                 </div>
+
+                {llmKey && <p className="mt-3 text-xs text-emerald-600 flex items-center gap-1"><Icon name="circle-check" size={12} /> {LLM_PROVIDERS[llmProvider]?.name} Key aktiv</p>}
               </div>
             )}
 
@@ -2075,29 +2134,50 @@
                     <h2 className="text-lg font-bold text-gray-900">Betriebe verwalten</h2>
                     <button onClick={() => setShowBetriebModal(false)} className="w-9 h-9 modal-close-btn flex items-center justify-center rounded-xl transition"><svg className="close-x" width="18" height="18" viewBox="0 0 24 24" fill="none"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
                   </div>
-                  <div className="p-6 space-y-4">
-                    <div className="space-y-2">
-                      {betriebe.map(b => (
-                        <div key={b.id} className={`flex items-center justify-between p-3 rounded-xl transition ${b.id === currentBetrieb ? 'bg-wine-50 border border-wine-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
-                          <span className="font-medium text-gray-700">{b.name}</span>
-                          <div className="flex gap-2">
-                            {b.id !== currentBetrieb && <button onClick={() => setCurrentBetrieb(b.id)} className="text-xs px-3 py-1 bg-wine-100 text-wine-700 rounded-lg hover:bg-wine-200 transition">Wählen</button>}
-                            {b.id !== 'default' && <button onClick={() => setBetriebe(prev => prev.filter(x => x.id !== b.id))} className="text-xs px-3 py-1 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition">Löschen</button>}
+                  <div className="p-6 space-y-5">
+                    {/* Bestehende Betriebe */}
+                    <div>
+                      <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Betriebe ({betriebe.length})</h4>
+                      <div className="space-y-2">
+                        {betriebe.map(b => (
+                          <div key={b.id} onClick={() => setCurrentBetrieb(b.id)}
+                            className={`flex items-center justify-between p-4 rounded-xl cursor-pointer transition-all ${b.id === currentBetrieb ? 'bg-wine-50 border-2 border-wine-300 shadow-sm' : 'bg-gray-50 border-2 border-transparent hover:bg-gray-100 hover:border-gray-200'}`}>
+                            <div className="flex items-center gap-3">
+                              <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${b.id === currentBetrieb ? 'bg-wine-200' : 'bg-gray-200'}`}>
+                                <Icon name="building-2" size={16} className={b.id === currentBetrieb ? 'text-wine-700' : 'text-gray-500'} />
+                              </div>
+                              <div>
+                                <span className={`font-semibold ${b.id === currentBetrieb ? 'text-wine-800' : 'text-gray-700'}`}>{b.name}</span>
+                                {b.id === currentBetrieb && <span className="ml-2 text-xs bg-wine-200 text-wine-700 px-2 py-0.5 rounded-full font-medium">Aktiv</span>}
+                              </div>
+                            </div>
+                            {b.id !== 'default' && (
+                              <button onClick={(e) => { e.stopPropagation(); if(b.id === currentBetrieb) setCurrentBetrieb('default'); setBetriebe(prev => prev.filter(x => x.id !== b.id)); }}
+                                className="text-xs px-3 py-1.5 bg-red-50 text-red-500 rounded-lg hover:bg-red-100 hover:text-red-700 transition font-medium">Löschen</button>
+                            )}
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                    <div className="border-t border-gray-100 pt-4">
-                      <h4 className="text-sm font-semibold text-gray-700 mb-2">Neuer Betrieb</h4>
+
+                    {/* Neuer Betrieb */}
+                    <div className="border-t border-gray-100 pt-5">
+                      <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Neuer Betrieb hinzufügen</h4>
                       <div className="flex gap-2">
-                        <input value={newBetriebName} onChange={e => setNewBetriebName(e.target.value)} placeholder="Betriebsname..." className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        <input value={newBetriebName} onChange={e => setNewBetriebName(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter' && newBetriebName.trim()) { const id='betrieb_'+Date.now(); setBetriebe(prev=>[...prev,{id,name:newBetriebName.trim(),logo:null}]); setNewBetriebName(''); setCurrentBetrieb(id); }}}
+                          placeholder="z.B. Restaurant Seegarten..."
+                          className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-wine-500 focus:border-transparent" />
                         <button onClick={() => {
                           if (newBetriebName.trim()) {
                             const id = 'betrieb_' + Date.now();
                             setBetriebe(prev => [...prev, { id, name: newBetriebName.trim(), logo: null }]);
+                            setCurrentBetrieb(id);
                             setNewBetriebName('');
                           }
-                        }} className="px-4 py-2 bg-wine-600 text-white rounded-lg text-sm font-semibold hover:bg-wine-700 transition">Hinzufügen</button>
+                        }} className="px-5 py-2.5 bg-wine-600 text-white rounded-xl text-sm font-semibold hover:bg-wine-700 transition shadow-sm">
+                          <Icon name="plus" size={16} />
+                        </button>
                       </div>
                     </div>
                   </div>
