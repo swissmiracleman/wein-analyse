@@ -158,6 +158,21 @@
 
     /* Fullscreen */
     body.fullscreen-mode .app-header, body.fullscreen-mode .app-footer, body.fullscreen-mode .upload-section { display: none !important; }
+    .app-header button, .app-header select { background: rgba(255,255,255,0.25) !important; border-color: rgba(255,255,255,0.35) !important; color: white !important; }
+    .app-header button:hover, .app-header select:hover { background: rgba(255,255,255,0.4) !important; }
+    .app-header > div button svg, .app-header > div select svg { stroke: white !important; }
+    .app-header .kbd-badge { background: rgba(255,255,255,0.3); color: white; padding: 1px 6px; border-radius: 4px; font-size: 10px; margin-left: 4px; }
+
+    /* Modal close buttons - always visible */
+    .modal-close-btn { background: rgba(0,0,0,0.06); }
+    .modal-close-btn:hover { background: rgba(0,0,0,0.12); }
+    .modal-close-btn .close-x { display: block; }
+    .modal-close-btn .close-x line { stroke: #6b7280; stroke-width: 2; stroke-linecap: round; }
+    .modal-close-btn:hover .close-x line { stroke: #111827; }
+    body.dark .modal-close-btn { background: rgba(255,255,255,0.08); }
+    body.dark .modal-close-btn:hover { background: rgba(255,255,255,0.16); }
+    body.dark .modal-close-btn .close-x line { stroke: #9ca3af; }
+    body.dark .modal-close-btn:hover .close-x line { stroke: white; }
     body.fullscreen-mode .app-content { padding-top: 10px !important; }
     @keyframes fullscreenBadge { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     .fullscreen-badge { animation: fullscreenBadge 0.3s ease-out; position: fixed; bottom: 20px; right: 20px; z-index: 55; }
@@ -604,7 +619,7 @@
           <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
               <h3 className="font-bold text-gray-900">Tastenkürzel</h3>
-              <button onClick={onClose} className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-lg transition"><Icon name="x" size={16} /></button>
+              <button onClick={onClose} className="w-8 h-8 modal-close-btn flex items-center justify-center rounded-lg transition"><svg className="close-x" width="16" height="16" viewBox="0 0 24 24" fill="none"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
             </div>
             <div className="space-y-3">
               {shortcuts.map((s, i) => (
@@ -745,7 +760,11 @@
       const debouncedMatrixSearch = useDebounce(matrixSearch, 200);
 
       // Business State
+      const [calcMode, setCalcMode] = useState('markup'); // 'markup' | 'fixedDB' | 'fixedVP' | 'targetDBpct'
       const [calcMargin, setCalcMargin] = useState(300);
+      const [calcFixedDB, setCalcFixedDB] = useState(40);
+      const [calcFixedVP, setCalcFixedVP] = useState(55);
+      const [calcTargetDBpct, setCalcTargetDBpct] = useState(60);
       const [openWineGlassSize, setOpenWineGlassSize] = useState(1.5);
       const [openWineSchwund, setOpenWineSchwund] = useState(10);
       const [cardPlanMaxWines, setCardPlanMaxWines] = useState(20);
@@ -1109,45 +1128,39 @@
                       {betriebe.map(b => <option key={b.id} value={b.id} style={{color:'#1f2937'}}>{b.name}</option>)}
                     </select>
                   )}
-                  <button onClick={() => setShowBetriebModal(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-white/10 text-white/90 border border-white/10 hover:bg-white/20 transition" data-tooltip="Betriebe verwalten">
-                    <Icon name="building-2" size={15} />Betriebe
+                  <button onClick={() => setShowBetriebModal(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-white/20 text-white border border-white/20 hover:bg-white/30 transition">
+                    <Icon name="building-2" size={15} />Betriebe<span className="kbd-badge">B</span>
                   </button>
-                  {/* Management: Print */}
-                  <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-white/10 text-white/90 border border-white/10 hover:bg-white/20 transition" data-tooltip="Drucken">
-                    <Icon name="printer" size={15} />{STRINGS.actions.print}
-                    <span className="kbd-badge">P</span>
+                  <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-white/20 text-white border border-white/20 hover:bg-white/30 transition">
+                    <Icon name="printer" size={15} />Drucken<span className="kbd-badge">P</span>
                   </button>
-                  {/* Dark Mode */}
                   <button onClick={()=>setDarkMode(!darkMode)}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all bg-white/10 text-white/90 border border-white/10 hover:bg-white/20"
-                    data-tooltip={darkMode ? 'Light Mode' : 'Dark Mode'} aria-label={darkMode ? STRINGS.actions.lightMode : STRINGS.actions.darkMode}>
-                    <Icon name={darkMode ? "sun" : "moon"} size={15} />{darkMode ? STRINGS.actions.lightMode : STRINGS.actions.darkMode}
-                    <span className="kbd-badge">D</span>
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all bg-white/20 text-white border border-white/20 hover:bg-white/30">
+                    <Icon name={darkMode ? "sun" : "moon"} size={15} />{darkMode ? 'Light Mode' : 'Dark Mode'}<span className="kbd-badge">D</span>
                   </button>
                   <button onClick={()=>setShowKeyInput(!showKeyInput)}
-                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${geminiKey?'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 hover:bg-emerald-500/30':'bg-white/10 text-white/70 border border-white/10 hover:bg-white/20'}`}>
-                    <Icon name="key" size={15} />{geminiKey?STRINGS.actions.apiActive:STRINGS.actions.apiKey}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${geminiKey?'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 hover:bg-emerald-500/30':'bg-white/20 text-white border border-white/20 hover:bg-white/30'}`}>
+                    <Icon name="key" size={15} />{geminiKey ? 'API-Key aktiv' : 'API-Key'}
                   </button>
-                  <button onClick={()=>setUseLLM(!useLLM)} data-tooltip="LLM filtert Getränke vor dem Matching"
-                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${useLLM?'bg-purple-500/20 text-purple-200 border border-purple-400/30 hover:bg-purple-500/30':'bg-white/10 text-white/70 border border-white/10 hover:bg-white/20'}`}>
-                    <Icon name={useLLM?"sparkles":"bot"} size={15} />KI {useLLM?STRINGS.actions.kiOn.split(' ')[1]:STRINGS.actions.kiOff.split(' ')[1]}
+                  <button onClick={()=>setUseLLM(!useLLM)}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${useLLM?'bg-purple-500/20 text-purple-200 border border-purple-400/30 hover:bg-purple-500/30':'bg-white/20 text-white border border-white/20 hover:bg-white/30'}`}>
+                    <Icon name={useLLM?"sparkles":"bot"} size={15} />KI {useLLM ? 'An' : 'Aus'}
                   </button>
                   {analysisResult && (
-                    <button onClick={exportResults} className="flex items-center gap-2 px-4 py-2.5 bg-white/10 text-white/90 rounded-xl text-sm font-medium border border-white/10 hover:bg-white/20 transition-all">
-                      <Icon name="download" size={15} />{STRINGS.actions.export}<span className="kbd-badge">E</span>
+                    <button onClick={exportResults} className="flex items-center gap-2 px-4 py-2.5 bg-white/20 text-white rounded-xl text-sm font-medium border border-white/20 hover:bg-white/30 transition-all">
+                      <Icon name="download" size={15} />Excel<span className="kbd-badge">E</span>
                     </button>
                   )}
                   {analysisResult && (
-                    <button onClick={exportPDF} className="flex items-center gap-2 px-4 py-2.5 bg-white/10 text-white/90 rounded-xl text-sm font-medium border border-white/10 hover:bg-white/20 transition-all">
-                      <Icon name="file-text" size={15} />{STRINGS.actions.pdf}
+                    <button onClick={exportPDF} className="flex items-center gap-2 px-4 py-2.5 bg-white/20 text-white rounded-xl text-sm font-medium border border-white/20 hover:bg-white/30 transition-all">
+                      <Icon name="file-text" size={15} />PDF
                     </button>
                   )}
-                  {/* Premium-UX: Fullscreen + Command Palette */}
-                  <button onClick={() => setIsFullscreen(f => !f)} className="flex items-center gap-2 px-4 py-2.5 bg-white/10 text-white/90 rounded-xl text-sm font-medium border border-white/10 hover:bg-white/20 transition-all" data-tooltip={STRINGS.actions.fullscreen}>
-                    <Icon name={isFullscreen ? "minimize" : "maximize"} size={15} /><span className="kbd-badge">F</span>
+                  <button onClick={() => setIsFullscreen(f => !f)} className="flex items-center gap-2 px-4 py-2.5 bg-white/20 text-white rounded-xl text-sm font-medium border border-white/20 hover:bg-white/30 transition-all">
+                    <Icon name={isFullscreen ? "minimize" : "maximize"} size={15} />Vollbild<span className="kbd-badge">F</span>
                   </button>
-                  <button onClick={() => setShowCommandPalette(true)} className="flex items-center gap-2 px-4 py-2.5 bg-white/10 text-white/90 rounded-xl text-sm font-medium border border-white/10 hover:bg-white/20 transition-all" data-tooltip={STRINGS.actions.cmdPalette}>
-                    <Icon name="command" size={15} /><span className="kbd-badge">Ctrl+K</span>
+                  <button onClick={() => setShowCommandPalette(true)} className="flex items-center gap-2 px-4 py-2.5 bg-white/20 text-white rounded-xl text-sm font-medium border border-white/20 hover:bg-white/30 transition-all">
+                    <Icon name="command" size={15} />Suche<span className="kbd-badge">Ctrl+K</span>
                   </button>
                   {unmatchedItems.length>0 && (
                     <button onClick={()=>setUiState({...uiState,showUnmatched:true})}
@@ -1363,29 +1376,98 @@
                     <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
                       <div className="flex items-center gap-3 mb-6">
                         <div className="w-10 h-10 bg-gradient-to-br from-emerald-400 to-emerald-500 rounded-xl flex items-center justify-center"><Icon name="calculator" size={20} className="text-white" /></div>
-                        <div><h3 className="font-bold text-lg text-gray-800">{STRINGS.calc.title}</h3><p className="text-sm text-gray-500">Simulation: Was wenn die Marge {calcMargin}% beträgt?</p></div>
+                        <div><h3 className="font-bold text-lg text-gray-800">{STRINGS.calc.title}</h3><p className="text-sm text-gray-500">Simulation: Wie verändern sich Preise und Margen?</p></div>
                       </div>
-                      <div className="flex items-center gap-4 mb-6">
-                        <span className="text-sm font-medium text-gray-600">Ziel-Marge:</span>
-                        <input type="range" min="150" max="500" step="10" value={calcMargin} onChange={e => setCalcMargin(Number(e.target.value))} className="flex-1 accent-wine-500" />
-                        <span className="text-lg font-bold text-wine-600 w-16 text-right">{calcMargin}%</span>
+
+                      {/* Modus-Auswahl */}
+                      <div className="flex flex-wrap gap-2 mb-5">
+                        {[
+                          { id:'markup', label:'Aufschlag %', icon:'percent' },
+                          { id:'fixedDB', label:'Fixer DB (CHF)', icon:'swiss-franc' },
+                          { id:'fixedVP', label:'Fixer VP (CHF)', icon:'tag' },
+                          { id:'targetDBpct', label:'Ziel DB-Marge %', icon:'target' }
+                        ].map(m => (
+                          <button key={m.id} onClick={() => setCalcMode(m.id)}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${calcMode === m.id ? 'bg-wine-100 text-wine-700 border border-wine-200 shadow-inner' : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'}`}>
+                            <Icon name={m.icon} size={14} />{m.label}
+                          </button>
+                        ))}
                       </div>
+
+                      {/* Slider je nach Modus */}
+                      {calcMode === 'markup' && (
+                        <div>
+                          <div className="flex items-center gap-4 mb-2">
+                            <span className="text-sm font-medium text-gray-600 whitespace-nowrap">Aufschlag:</span>
+                            <input type="range" min="0" max="500" step="5" value={calcMargin} onChange={e => setCalcMargin(Number(e.target.value))} className="flex-1 accent-wine-500" />
+                            <input type="number" min="0" max="9999" value={calcMargin} onChange={e => setCalcMargin(Number(e.target.value)||0)} className="w-20 px-2 py-1 text-right font-bold text-wine-600 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-wine-500" />
+                            <span className="text-sm font-medium text-gray-500">%</span>
+                          </div>
+                          <p className="text-xs text-gray-400 mb-5">VP = EP + (EP × {calcMargin}%) = EP × {((100 + calcMargin) / 100).toFixed(2)}</p>
+                        </div>
+                      )}
+                      {calcMode === 'fixedDB' && (
+                        <div>
+                          <div className="flex items-center gap-4 mb-2">
+                            <span className="text-sm font-medium text-gray-600 whitespace-nowrap">DB pro Flasche:</span>
+                            <input type="range" min="0" max="150" step="1" value={calcFixedDB} onChange={e => setCalcFixedDB(Number(e.target.value))} className="flex-1 accent-wine-500" />
+                            <span className="text-sm font-medium text-gray-500">CHF</span>
+                            <input type="number" min="0" max="9999" step="0.5" value={calcFixedDB} onChange={e => setCalcFixedDB(Number(e.target.value)||0)} className="w-24 px-2 py-1 text-right font-bold text-wine-600 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-wine-500" />
+                          </div>
+                          <p className="text-xs text-gray-400 mb-5">VP = EP + CHF {calcFixedDB} (gleicher DB auf jeden Wein)</p>
+                        </div>
+                      )}
+                      {calcMode === 'fixedVP' && (
+                        <div>
+                          <div className="flex items-center gap-4 mb-2">
+                            <span className="text-sm font-medium text-gray-600 whitespace-nowrap">Einheitspreis:</span>
+                            <input type="range" min="0" max="500" step="5" value={calcFixedVP} onChange={e => setCalcFixedVP(Number(e.target.value))} className="flex-1 accent-wine-500" />
+                            <span className="text-sm font-medium text-gray-500">CHF</span>
+                            <input type="number" min="0" max="99999" step="0.5" value={calcFixedVP} onChange={e => setCalcFixedVP(Number(e.target.value)||0)} className="w-24 px-2 py-1 text-right font-bold text-wine-600 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-wine-500" />
+                          </div>
+                          <p className="text-xs text-gray-400 mb-5">Alle Weine zum gleichen Preis — zeigt welche profitabel bleiben</p>
+                        </div>
+                      )}
+                      {calcMode === 'targetDBpct' && (
+                        <div>
+                          <div className="flex items-center gap-4 mb-2">
+                            <span className="text-sm font-medium text-gray-600 whitespace-nowrap">Ziel DB-Marge:</span>
+                            <input type="range" min="0" max="90" step="1" value={calcTargetDBpct} onChange={e => setCalcTargetDBpct(Number(e.target.value))} className="flex-1 accent-wine-500" />
+                            <input type="number" min="0" max="99" step="1" value={calcTargetDBpct} onChange={e => setCalcTargetDBpct(Number(e.target.value)||0)} className="w-20 px-2 py-1 text-right font-bold text-wine-600 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-wine-500" />
+                            <span className="text-sm font-medium text-gray-500">%</span>
+                          </div>
+                          <p className="text-xs text-gray-400 mb-5">VP = EP / (1 - {calcTargetDBpct}%) → DB ist immer {calcTargetDBpct}% vom VP</p>
+                        </div>
+                      )}
+
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm">
-                          <thead><tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider"><th className="text-left px-4 py-3">Wein</th><th className="text-right px-4 py-3">EP</th><th className="text-right px-4 py-3">{STRINGS.calc.currentVP}</th><th className="text-right px-4 py-3">{STRINGS.calc.recommended}</th><th className="text-right px-4 py-3">DB (neu)</th><th className="text-right px-4 py-3">Diff</th></tr></thead>
+                          <thead><tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider"><th className="text-left px-4 py-3">Wein</th><th className="text-right px-4 py-3">EP</th><th className="text-right px-4 py-3">Akt. VP</th><th className="text-right px-4 py-3">Akt. DB</th><th className="text-right px-4 py-3">Akt. Marge</th><th className="text-right px-4 py-3">Neuer VP</th><th className="text-right px-4 py-3">Neuer DB</th><th className="text-right px-4 py-3">Neue Marge</th><th className="text-right px-4 py-3">Diff</th></tr></thead>
                           <tbody>
                             {(analysisResult.allItems || []).slice(0, 50).map((item, i) => {
                               const ep = item.ep || 0;
-                              const newVP = ep * (calcMargin / 100);
+                              const currentDB = item.vp - ep;
+                              const currentMarge = item.vp > 0 ? (currentDB / item.vp * 100) : 0;
+
+                              let newVP = 0;
+                              if (calcMode === 'markup') newVP = ep * (1 + calcMargin / 100);
+                              else if (calcMode === 'fixedDB') newVP = ep + calcFixedDB;
+                              else if (calcMode === 'fixedVP') newVP = calcFixedVP;
+                              else if (calcMode === 'targetDBpct') newVP = calcTargetDBpct < 100 ? ep / (1 - calcTargetDBpct / 100) : 0;
+
                               const newDB = newVP - ep;
+                              const newMarge = newVP > 0 ? (newDB / newVP * 100) : 0;
                               const diff = newVP - item.vp;
                               return (
                                 <tr key={item.name} className={`border-t border-gray-50 hover:bg-gray-50 transition ${i % 2 === 0 ? '' : 'bg-gray-50/30'}`}>
                                   <td className="px-4 py-3 font-medium text-gray-800 max-w-xs truncate" title={item.name}>{item.name}</td>
                                   <td className="px-4 py-3 text-right text-gray-500">{formatCHF(ep)}</td>
-                                  <td className="px-4 py-3 text-right text-gray-700 font-semibold">{formatCHF(item.vp)}</td>
+                                  <td className="px-4 py-3 text-right text-gray-700">{formatCHF(item.vp)}</td>
+                                  <td className="px-4 py-3 text-right text-gray-500">{formatCHF(currentDB)}</td>
+                                  <td className="px-4 py-3 text-right text-gray-400">{currentMarge.toFixed(0)}%</td>
                                   <td className="px-4 py-3 text-right font-bold text-wine-700">{formatCHF(newVP)}</td>
-                                  <td className="px-4 py-3 text-right text-emerald-600">{formatCHF(newDB)}</td>
+                                  <td className={`px-4 py-3 text-right font-semibold ${newDB >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCHF(newDB)}</td>
+                                  <td className={`px-4 py-3 text-right ${newMarge >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>{newMarge.toFixed(0)}%</td>
                                   <td className={`px-4 py-3 text-right font-semibold ${diff >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{diff >= 0 ? '+' : ''}{formatCHF(diff)}</td>
                                 </tr>
                               );
@@ -1953,7 +2035,7 @@
                 <div className="bg-white rounded-3xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden fade-in-scale mobile-modal">
                   <div className="flex justify-between items-center p-6 border-b border-gray-100">
                     <div className="flex items-center gap-3"><div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center"><Icon name="alert-circle" size={20} className="text-amber-600" /></div><div><h2 className="text-lg font-bold text-gray-900">{STRINGS.unmatched.title}</h2><p className="text-xs text-gray-500">{STRINGS.unmatched.sub}</p></div></div>
-                    <button onClick={()=>setUiState({...uiState,showUnmatched:false})} className="w-9 h-9 flex items-center justify-center hover:bg-gray-100 rounded-xl transition" aria-label="Schliessen"><Icon name="x" size={18} /></button>
+                    <button onClick={()=>setUiState({...uiState,showUnmatched:false})} className="w-9 h-9 modal-close-btn flex items-center justify-center rounded-xl transition" aria-label="Schliessen"><svg className="close-x" width="18" height="18" viewBox="0 0 24 24" fill="none"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
                   </div>
                   <div className="p-6 overflow-y-auto flex-1 bg-gray-50/50">
                     <div className="space-y-3">
@@ -1991,7 +2073,7 @@
                 <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden fade-in-scale">
                   <div className="flex justify-between items-center p-6 border-b border-gray-100">
                     <h2 className="text-lg font-bold text-gray-900">Betriebe verwalten</h2>
-                    <button onClick={() => setShowBetriebModal(false)} className="w-9 h-9 flex items-center justify-center hover:bg-gray-100 rounded-xl transition"><Icon name="x" size={18} /></button>
+                    <button onClick={() => setShowBetriebModal(false)} className="w-9 h-9 modal-close-btn flex items-center justify-center rounded-xl transition"><svg className="close-x" width="18" height="18" viewBox="0 0 24 24" fill="none"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
                   </div>
                   <div className="p-6 space-y-4">
                     <div className="space-y-2">
@@ -2029,7 +2111,7 @@
                 <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden fade-in-scale">
                   <div className="flex justify-between items-center p-6 border-b border-gray-100">
                     <h2 className="text-lg font-bold text-gray-900">Umsatzziel setzen</h2>
-                    <button onClick={() => setShowZielModal(false)} className="w-9 h-9 flex items-center justify-center hover:bg-gray-100 rounded-xl transition"><Icon name="x" size={18} /></button>
+                    <button onClick={() => setShowZielModal(false)} className="w-9 h-9 modal-close-btn flex items-center justify-center rounded-xl transition"><svg className="close-x" width="18" height="18" viewBox="0 0 24 24" fill="none"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
                   </div>
                   <div className="p-6 space-y-4">
                     <div>
